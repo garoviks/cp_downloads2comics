@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-04-08T07:45:33.654631",
+  "operations": [
+    {
+      "series": "The Shadower",
+      "dest_folder": "/",
+      "action_type": "COPY_TO_BASE",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/The Shadower (2026) (Graphic Novel) (Top Shelf) (Digital) (LeDuch).cbz",
+          "dst": "/mnt/extramedia/Comics/The Shadower (2026) (Graphic Novel) (Top Shelf) (Digital) (LeDuch).cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    }
+  ]
+}

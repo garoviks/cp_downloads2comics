@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comic File Organizer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: #16213e;
+    border-bottom: 2px solid #0f3460;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 1.4rem;
+    color: #e94560;
+    flex: 1;
+  }
+  header h1 span { color: #a8dadc; font-weight: 400; font-size: 1rem; }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    background: #0f3460;
+    padding: 10px 24px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .stat-num {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #e94560;
+  }
+  .stat-label { font-size: 0.8rem; color: #a8dadc; text-transform: uppercase; letter-spacing: 1px; }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn-primary   { background: #e94560; color: #fff; }
+  .btn-secondary { background: #0f3460; color: #a8dadc; border: 1px solid #a8dadc44; }
+  .btn-success   { background: #2d6a4f; color: #d8f3dc; }
+  .btn-sm        { padding: 4px 10px; font-size: 0.75rem; }
+  .btn-outline   { background: transparent; color: #a8dadc; border: 1px solid #a8dadc55; }
+  .btn-outline:hover { background: #a8dadc22; }
+
+  /* ── Section ── */
+  .section {
+    margin: 20px 24px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #a8dadc;
+  }
+  .badge {
+    background: #e94560;
+    color: #fff;
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .badge-green { background: #2d6a4f; }
+
+  /* ── Table ── */
+  .table-wrap {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #0f346080;
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+  thead th {
+    background: #16213e;
+    color: #a8dadc;
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    white-space: nowrap;
+  }
+  thead th:first-child { width: 36px; text-align: center; }
+  tbody tr { border-bottom: 1px solid #0f346044; transition: background 0.1s; }
+  tbody tr:hover { background: #16213e88; }
+  tbody tr.selected { background: #0f346066; }
+  td { padding: 9px 12px; vertical-align: middle; }
+  td:first-child { text-align: center; }
+
+  .file-name {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #f0f0f0;
+    font-family: monospace;
+    font-size: 0.78rem;
+  }
+  .folder-name {
+    font-family: monospace;
+    color: #a8dadc;
+    font-size: 0.78rem;
+  }
+  .match-count {
+    text-align: center;
+    font-weight: 700;
+    color: #e94560;
+  }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  .pill-yes { background: #2d6a4f55; color: #d8f3dc; border: 1px solid #2d6a4f; }
+  .pill-no  { background: #3d171744; color: #f4a4a4; border: 1px solid #e9456044; }
+
+  .strategy-text {
+    color: #b0b0c0;
+    font-size: 0.75rem;
+    word-wrap: break-word;
+    white-space: normal;
+  }
+
+  /* ── Resizable columns ── */
+  table {
+    table-layout: fixed;
+  }
+  th {
+    position: relative;
+    user-select: none;
+  }
+  .resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.2s;
+  }
+  .resize-handle:hover {
+    background: #e94560;
+  }
+  .resize-handle.active {
+    background: #e94560;
+  }
+
+  .actions-cell { white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+
+  /* ── Modal ── */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #00000099;
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 10px;
+    padding: 24px;
+    width: 90%;
+    max-width: 680px;
+    max-height: 85vh;
+    overflow-y: auto;
+    position: relative;
+  }
+  .modal-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #e94560;
+    margin-bottom: 16px;
+  }
+  .modal-close {
+    position: absolute;
+    top: 16px; right: 16px;
+    background: none;
+    border: none;
+    color: #a8dadc;
+    font-size: 1.4rem;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .modal-close:hover { color: #e94560; }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 8px 16px;
+    font-size: 0.83rem;
+  }
+  .detail-label { color: #a8dadc; font-weight: 600; }
+  .detail-value { color: #e0e0e0; font-family: monospace; word-break: break-word; }
+
+  .modal-footer { margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; }
+
+  /* destination edit */
+  .dest-input {
+    width: 100%;
+    background: #1a1a2e;
+    border: 1px solid #0f346080;
+    color: #e0e0e0;
+    font-family: monospace;
+    font-size: 0.9rem;
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin-top: 10px;
+  }
+  .dest-input:focus { outline: 2px solid #e94560; border-color: transparent; }
+
+  /* preview list */
+  .preview-list { list-style: none; }
+  .preview-list li {
+    padding: 8px 12px;
+    border-bottom: 1px solid #0f346044;
+    font-family: monospace;
+    font-size: 0.78rem;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .preview-list li:last-child { border-bottom: none; }
+  .arrow { color: #e94560; flex-shrink: 0; }
+  .move-src { color: #f0f0c0; }
+  .move-dst { color: #a8dadc; }
+
+  /* script output */
+  textarea.script-out {
+    width: 100%;
+    height: 360px;
+    background: #0d1117;
+    color: #79c0ff;
+    font-family: 'Courier New', monospace;
+    font-size: 0.76rem;
+    border: 1px solid #0f3460;
+    border-radius: 6px;
+    padding: 12px;
+    resize: vertical;
+  }
+
+  /* ── Search / filter bar ── */
+  .filter-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .search-input {
+    background: #16213e;
+    border: 1px solid #0f346080;
+    color: #e0e0e0;
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 0.83rem;
+    width: 240px;
+  }
+  .search-input:focus { outline: 2px solid #e94560; border-color: transparent; }
+  .filter-select {
+    background: #16213e;
+    border: 1px solid #0f346080;
+    color: #e0e0e0;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 0.83rem;
+    cursor: pointer;
+  }
+
+  /* ── Notification toast ── */
+  #toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: #2d6a4f;
+    color: #d8f3dc;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 200;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+
+  input[type="checkbox"] {
+    accent-color: #e94560;
+    width: 15px; height: 15px;
+    cursor: pointer;
+  }
+
+  .select-all-row { background: #0f346033 !important; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════
+     HEADER
+══════════════════════════════════════════════ -->
+<header>
+  <h1>Comic File Organizer <span>— Consolidation Planner</span></h1>
+  <button class="btn btn-secondary" onclick="openPreview()">&#128065; Preview Moves</button>
+  <button class="btn btn-primary"   onclick="openGenerateScript()">&#9881; Generate Script</button>
+  <button class="btn btn-success"   onclick="exportReport()">&#128196; Export Report</button>
+  <button class="btn btn-outline"   onclick="reloadCSV()">&#128260; Reload CSV</button>
+</header>
+
+<!-- ══════════════════════════════════════════════
+     STATS BAR
+══════════════════════════════════════════════ -->
+<div class="stats-bar">
+  <div class="stat">
+    <span class="stat-num" id="stat-consolidate">54</span>
+    <span class="stat-label">Consolidations</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num" id="stat-newfolder">12</span>
+    <span class="stat-label">New Folders</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num" id="stat-files">72</span>
+    <span class="stat-label">Source Files</span>
+  </div>
+  <div class="stat">
+    <span class="stat-num" id="stat-selected">0</span>
+    <span class="stat-label">Selected</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION 1: CONSOLIDATIONS
+══════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-title">Consolidations</span>
+    <span class="badge" id="badge-consolidate">54</span>
+    <span style="font-size:0.75rem;color:#b0b0c0;margin-left:4px;">Files with matching right-panel entries → move into series folder</span>
+  </div>
+
+  <div class="filter-bar">
+    <input class="search-input" type="text" id="search-consolidate" placeholder="Search series or file…" oninput="filterTable('consolidate')">
+    <select class="filter-select" id="filter-folder" onchange="filterTable('consolidate')">
+      <option value="">All (Has Folder)</option>
+      <option value="YES">Has Existing Folder</option>
+      <option value="NO">No Existing Folder</option>
+    </select>
+    <select class="filter-select" id="filter-move-source" onchange="filterTable('consolidate')">
+      <option value="">All (Move Source)</option>
+      <option value="LEFT">LEFT only</option>
+      <option value="LEFT + RIGHT_FILES">LEFT + RIGHT_FILES</option>
+    </select>
+    <button class="btn btn-sm btn-outline" onclick="selectAll('consolidate')">Select All</button>
+    <button class="btn btn-sm btn-outline" onclick="deselectAll('consolidate')">Deselect All</button>
+  </div>
+
+  <div class="table-wrap">
+    <table id="tbl-consolidate">
+      <thead>
+        <tr>
+          <th style="width:36px;"><input type="checkbox" id="chk-all-consolidate" onchange="toggleAllInSection('consolidate', this.checked)"><div class="resize-handle"></div></th>
+          <th style="width:220px;">Left Panel File<div class="resize-handle"></div></th>
+          <th style="width:140px;">Series Name<div class="resize-handle"></div></th>
+          <th style="width:160px;">Destination Folder<div class="resize-handle"></div></th>
+          <th style="width:40px;" title="Right Panel Matches">#<div class="resize-handle"></div></th>
+          <th style="width:100px;">Has Folder<div class="resize-handle"></div></th>
+          <th style="width:100px;">Has Files<div class="resize-handle"></div></th>
+          <th style="width:320px;">Strategy<div class="resize-handle"></div></th>
+          <th style="width:180px;">Actions<div class="resize-handle"></div></th>
+        </tr>
+      </thead>
+      <tbody id="body-consolidate"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     SECTION 2: NEW FOLDERS
+══════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-title">New Folders / Unmatched</span>
+    <span class="badge badge-green" id="badge-newfolder">13</span>
+    <span style="font-size:0.75rem;color:#b0b0c0;margin-left:4px;">No existing folder found — create new folder and move files</span>
+  </div>
+
+  <div class="filter-bar">
+    <input class="search-input" type="text" id="search-newfolder" placeholder="Search series or file…" oninput="filterTable('newfolder')">
+    <button class="btn btn-sm btn-outline" onclick="selectAll('newfolder')">Select All</button>
+    <button class="btn btn-sm btn-outline" onclick="deselectAll('newfolder')">Deselect All</button>
+  </div>
+
+  <div class="table-wrap">
+    <table id="tbl-newfolder">
+      <thead>
+        <tr>
+          <th style="width:36px;"><input type="checkbox" id="chk-all-newfolder" onchange="toggleAllInSection('newfolder', this.checked)"><div class="resize-handle"></div></th>
+          <th style="width:220px;">Left Panel File<div class="resize-handle"></div></th>
+          <th style="width:140px;">Series Name<div class="resize-handle"></div></th>
+          <th style="width:160px;">New Folder<div class="resize-handle"></div></th>
+          <th style="width:320px;">Strategy<div class="resize-handle"></div></th>
+          <th style="width:180px;">Actions<div class="resize-handle"></div></th>
+        </tr>
+      </thead>
+      <tbody id="body-newfolder"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     MODAL: VIEW DETAILS
+══════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-details">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-details')">&times;</button>
+    <div class="modal-title" id="details-title">File Details</div>
+    <div class="detail-grid" id="details-grid"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-details')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     MODAL: CHANGE DESTINATION
+══════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-dest">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-dest')">&times;</button>
+    <div class="modal-title">Change Destination Folder</div>
+    <div style="font-size:0.83rem;color:#b0b0c0;" id="dest-file-label"></div>
+    <input class="dest-input" type="text" id="dest-input" placeholder="/New Folder Name/">
+    <div style="font-size:0.75rem;color:#b0b0c0;margin-top:8px;">
+      Tip: Use format <code style="color:#a8dadc">/Series Name/</code> — leading/trailing slashes included.
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-dest')">Cancel</button>
+      <button class="btn btn-primary"   onclick="saveDestination()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     MODAL: PREVIEW MOVES
+══════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-preview">
+  <div class="modal" style="max-width:760px;">
+    <button class="modal-close" onclick="closeModal('modal-preview')">&times;</button>
+    <div class="modal-title">Preview Moves</div>
+    <div style="font-size:0.8rem;color:#b0b0c0;margin-bottom:12px;" id="preview-subtitle"></div>
+    <ul class="preview-list" id="preview-list"></ul>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-preview')">Close</button>
+      <button class="btn btn-primary"   onclick="openGenerateScript()">Generate Script</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     MODAL: GENERATE SCRIPT
+══════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-script">
+  <div class="modal" style="max-width:820px;">
+    <button class="modal-close" onclick="closeModal('modal-script')">&times;</button>
+    <div class="modal-title">Generated Python Script</div>
+    <div style="font-size:0.8rem;color:#b0b0c0;margin-bottom:10px;" id="script-subtitle"></div>
+    <textarea class="script-out" id="script-out" readonly></textarea>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-script')">Close</button>
+      <button class="btn btn-outline"   onclick="copyScript()">&#128203; Copy Script</button>
+      <button class="btn btn-success"   onclick="downloadScript()">&#8595; Download .py</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     TOAST
+══════════════════════════════════════════════ -->
+<div id="toast"></div>
+
+<!-- ══════════════════════════════════════════════
+     DATA + LOGIC
+══════════════════════════════════════════════ -->
+<script>
+// ─── Raw CSV data ─────────────────────────────────────────────────────────
+const RAW = [
+  {leftFile:"2000AD prog 2476 (2026) (4320p) (juvecube).cbz",series:"2000AD prog 2476",action:"CONSOLIDATE",folder:"/2000AD/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Create /2000AD/ and move left file; consolidate right folder into it",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Animal Stories (2022) (digital) (Dr.Vink).cbz",series:"Animal Stories",action:"CONSOLIDATE",folder:"/Animal Stories/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /Animal Stories/ and move both files into it",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Astro Quantum 003 (of 005) (2026)",series:"Astro Quantum",action:"CONSOLIDATE",folder:"/Astro Quantum/",matches:2,hasFolder:"NO",hasFiles:"YES (2)",strategy:"Create /Astro Quantum/ and move all 3 files into it",moveSource:"LEFT + RIGHT_FILES(2)"},
+  {leftFile:"Babs - The Black Road South 003 (2026)",series:"Babs",action:"CONSOLIDATE",folder:"/Babs/",matches:2,hasFolder:"NO",hasFiles:"YES (2)",strategy:"Create /Babs/ and move all 3 files into it",moveSource:"LEFT + RIGHT_FILES(2)"},
+  {leftFile:"Billy & Buddy v10 - Walks on the Wild Side",series:"Billy & Buddy v10",action:"CONSOLIDATE",folder:"/Billy & Buddy v10/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Create folder and consolidate right folder into it",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Carmen Red Claw - Belly of the Beast 03",series:"Carmen Red Claw",action:"CONSOLIDATE",folder:"/Carmen Red Claw/",matches:2,hasFolder:"NO",hasFiles:"YES (2)",strategy:"Create /Carmen Red Claw/ and move all 3 files",moveSource:"LEFT + RIGHT_FILES(2)"},
+  {leftFile:"Cruel Universe II 009 (2026)",series:"Cruel Universe II",action:"CONSOLIDATE",folder:"/Cruel Universe II/",matches:5,hasFolder:"NO",hasFiles:"YES (5)",strategy:"Create /Cruel Universe II/ and move all 6 files",moveSource:"LEFT + RIGHT_FILES(5)"},
+  {leftFile:"Death Fight Forever 002 (of 005)",series:"Death Fight Forever",action:"CONSOLIDATE",folder:"/Death Fight Forever/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /Death Fight Forever/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Exit City 005 (2026)",series:"Exit City",action:"CONSOLIDATE",folder:"/Exit City/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /Exit City/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Feral 021 (2024)",series:"Feral",action:"CONSOLIDATE",folder:"/Feral/",matches:3,hasFolder:"YES",hasFiles:"YES (2)",strategy:"Consolidate existing folder and move all files into it",moveSource:"LEFT + RIGHT_FOLDER + RIGHT_FILES(2)"},
+  {leftFile:"Feral v04 - Pet City (2026)",series:"Feral v04",action:"CONSOLIDATE",folder:"/Feral v04/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Create /Feral v04/ and consolidate right folder",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Ferocious 005 (2026)",series:"Ferocious",action:"CONSOLIDATE",folder:"/Ferocious/",matches:4,hasFolder:"NO",hasFiles:"YES (4)",strategy:"Create /Ferocious/ and move all 5 files",moveSource:"LEFT + RIGHT_FILES(4)"},
+  {leftFile:"Final Boss 005 (of 004)",series:"Final Boss",action:"CONSOLIDATE",folder:"/Final Boss/",matches:4,hasFolder:"NO",hasFiles:"YES (4)",strategy:"Create /Final Boss/ and move all 5 files",moveSource:"LEFT + RIGHT_FILES(4)"},
+  {leftFile:"Geiger 022 (2026)",series:"Geiger",action:"CONSOLIDATE",folder:"/Geiger/",matches:5,hasFolder:"YES",hasFiles:"YES (4)",strategy:"Consolidate existing folder and move all files",moveSource:"LEFT + RIGHT_FOLDER + RIGHT_FILES(4)"},
+  {leftFile:"Ghost Machine 01 (of 05)",series:"Ghost Machine",action:"CONSOLIDATE",folder:"/Ghost Machine/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /Ghost Machine/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Ghost Pepper 009 (2026)",series:"Ghost Pepper",action:"CONSOLIDATE",folder:"/Ghost Pepper/",matches:8,hasFolder:"NO",hasFiles:"YES (8)",strategy:"Create /Ghost Pepper/ and move all 9 files",moveSource:"LEFT + RIGHT_FILES(8)"},
+  {leftFile:"Give Me Liberty! A Revised",series:"Give Me Liberty!",action:"CONSOLIDATE",folder:"/Give Me Liberty!/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Consolidate right folder; note: fuzzy match",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Gomer Goof 12",series:"Gomer Goof",action:"CONSOLIDATE",folder:"/Gomer Goof/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Consolidate existing Gomer Goof (Gaston) folder",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Groo - The Prophecy 01",series:"Groo",action:"CONSOLIDATE",folder:"/Groo/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Consolidate existing Groo folder",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Gunnerkrigg Court v02",series:"Gunnerkrigg Court v02",action:"CONSOLIDATE",folder:"/Gunnerkrigg Court v02/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files; note: fuzzy match",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Harry Dickson 02",series:"Harry Dickson",action:"CONSOLIDATE",folder:"/Harry Dickson/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files; note: fuzzy match",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Honor and Curse Eternal 001",series:"Honor and Curse Eternal",action:"CONSOLIDATE",folder:"/Honor and Curse Eternal/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files; note: fuzzy match",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Hyde Street 011 (2026)",series:"Hyde Street",action:"CONSOLIDATE",folder:"/Hyde Street/",matches:2,hasFolder:"YES",hasFiles:"YES (1)",strategy:"Consolidate folder and move all files",moveSource:"LEFT + RIGHT_FOLDER + RIGHT_FILE"},
+  {leftFile:"Is Ted OK 002 (2026)",series:"Is Ted OK",action:"CONSOLIDATE",folder:"/Is Ted OK/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /Is Ted OK/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Kaya 034 (2026)",series:"Kaya",action:"CONSOLIDATE",folder:"/Kaya/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Consolidate existing Kaya folder",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Kill All Immortals encrypted",series:"Kill All Immortals",action:"CONSOLIDATE",folder:"/Kill All Immortals/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Consolidate existing Kill All Immortals folder",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Kill All Immortals (2025) cbr",series:"Kill All Immortals",action:"CONSOLIDATE",folder:"/Kill All Immortals/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Consolidate existing Kill All Immortals folder",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Kill Me & Other Curiosities",series:"Kill Me & Other",action:"CONSOLIDATE",folder:"/Kill Me & Other Curiosities/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Killroy Is Here (2026)",series:"Killroy Is Here",action:"CONSOLIDATE",folder:"/Killroy Is Here/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Create /Killroy Is Here/ and consolidate right folder; note: fuzzy match",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Let This One Be A Devil v01",series:"Let This One Be A Devil",action:"CONSOLIDATE",folder:"/Let This One Be A Devil/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files; note: fuzzy match",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Let This One Be a Devil encrypted",series:"Let This One Be a Devil",action:"CONSOLIDATE",folder:"/Let This One Be a Devil/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files; note: fuzzy match",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Liquidator 005 (2026)",series:"Liquidator",action:"CONSOLIDATE",folder:"/Liquidator/",matches:4,hasFolder:"NO",hasFiles:"YES (4)",strategy:"Create /Liquidator/ and move all 5 files",moveSource:"LEFT + RIGHT_FILES(4)"},
+  {leftFile:"Megaghost 2 001",series:"Megaghost",action:"CONSOLIDATE",folder:"/Megaghost/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Consolidate existing Megaghost folder",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Minor Arcana 015",series:"Minor Arcana",action:"CONSOLIDATE",folder:"/Minor Arcana/",matches:2,hasFolder:"NO",hasFiles:"YES (2)",strategy:"Create /Minor Arcana/ and move all 3 files",moveSource:"LEFT + RIGHT_FILES(2)"},
+  {leftFile:"Minor Threats 004",series:"Minor Threats",action:"CONSOLIDATE",folder:"/Minor Threats/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Consolidate existing Minor Threats folder",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"Miss Truesdale 004",series:"Miss Truesdale",action:"CONSOLIDATE",folder:"/Miss Truesdale and the Rise of Man/",matches:3,hasFolder:"NO",hasFiles:"YES (3)",strategy:"Create folder and move all 4 files",moveSource:"LEFT + RIGHT_FILES(3)"},
+  {leftFile:"Return to Sleepy Hollow 005",series:"Return to Sleepy Hollow",action:"CONSOLIDATE",folder:"/Return to Sleepy Hollow/",matches:4,hasFolder:"NO",hasFiles:"YES (4)",strategy:"Create folder and move all 5 files",moveSource:"LEFT + RIGHT_FILES(4)"},
+  {leftFile:"Speed Racer 007",series:"Speed Racer",action:"CONSOLIDATE",folder:"/Speed Racer/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /Speed Racer/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"TexArcanum (2026)",series:"TexArcanum",action:"CONSOLIDATE",folder:"/TexArcanum/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /TexArcanum/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"The Autumn Kingdom 003",series:"The Autumn Kingdom",action:"CONSOLIDATE",folder:"/The Autumn Kingdom/",matches:6,hasFolder:"NO",hasFiles:"YES (6)",strategy:"Create folder and move all 7 files",moveSource:"LEFT + RIGHT_FILES(6)"},
+  {leftFile:"The Center Holds 02",series:"The Center Holds",action:"CONSOLIDATE",folder:"/The Center Holds/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /The Center Holds/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"The Department of Truth 036",series:"The Department of Truth",action:"CONSOLIDATE",folder:"/The Department of Truth/",matches:2,hasFolder:"YES",hasFiles:"YES (1)",strategy:"Consolidate folder and move all files",moveSource:"LEFT + RIGHT_FOLDER + RIGHT_FILE"},
+  {leftFile:"The Florida Hippopotamus 002",series:"The Florida Hippopotamus",action:"CONSOLIDATE",folder:"/The Florida Hippopotamus Cocaine Massacre/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"The Last Day of H.P. Lovecraft",series:"The Last Day",action:"CONSOLIDATE",folder:"/The Last Day of H.P. Lovecraft/",matches:2,hasFolder:"NO",hasFiles:"YES (2)",strategy:"Create folder and move all 3 files",moveSource:"LEFT + RIGHT_FILES(2)"},
+  {leftFile:"The New Space Age 004",series:"The New Space Age",action:"CONSOLIDATE",folder:"/The New Space Age/",matches:2,hasFolder:"NO",hasFiles:"YES (2)",strategy:"Create /The New Space Age/ and move all 3 files",moveSource:"LEFT + RIGHT_FILES(2)"},
+  {leftFile:"The Nightmare Before Christmas 004",series:"The Nightmare Before Christmas",action:"CONSOLIDATE",folder:"/The Nightmare Before Christmas/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"The Peril of the Brutal Dark 002",series:"The Peril of the Brutal Dark",action:"CONSOLIDATE",folder:"/The Peril of the Brutal Dark/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"The Sacrificers 020",series:"The Sacrificers",action:"CONSOLIDATE",folder:"/The Sacrificers/",matches:2,hasFolder:"YES",hasFiles:"YES (1)",strategy:"Consolidate folder and move all files",moveSource:"LEFT + RIGHT_FOLDER + RIGHT_FILE"},
+  {leftFile:"Tim Burton's Nightmare 004",series:"Tim Burton's The Nightmare",action:"CONSOLIDATE",folder:"/Tim Burton's The Nightmare Before Christmas/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create folder and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Tomb Raider - Sacred Artifacts",series:"Tomb Raider",action:"CONSOLIDATE",folder:"/Tomb Raider/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /Tomb Raider/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Touched by a Demon 003",series:"Touched by a Demon",action:"CONSOLIDATE",folder:"/Touched by a Demon/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /Touched by a Demon/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  {leftFile:"Universal Monsters 002",series:"Universal Monsters",action:"CONSOLIDATE",folder:"/Universal Monsters/",matches:2,hasFolder:"YES",hasFiles:"YES (1)",strategy:"Consolidate folder and move all files",moveSource:"LEFT + RIGHT_FOLDER + RIGHT_FILE"},
+  {leftFile:"w0rldtr33 019",series:"w0rldtr33",action:"CONSOLIDATE",folder:"/w0rldtr33/",matches:1,hasFolder:"YES",hasFiles:"NO",strategy:"Consolidate existing w0rldtr33 folder; note: fuzzy match",moveSource:"LEFT + RIGHT_FOLDER"},
+  {leftFile:"White Sky 002",series:"White Sky",action:"CONSOLIDATE",folder:"/White Sky/",matches:1,hasFolder:"NO",hasFiles:"YES (1)",strategy:"Create /White Sky/ and move both files",moveSource:"LEFT + RIGHT_FILE"},
+  // CREATE_FOLDER
+  {leftFile:"Amazonia 04",series:"Amazonia",action:"CREATE_FOLDER",folder:"/Amazonia/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder /Amazonia/",moveSource:"LEFT"},
+  {leftFile:"A Mischief of Magpies",series:"A Mischief of Magpies",action:"CREATE_FOLDER",folder:"/A Mischief of Magpies/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+  {leftFile:"Emilie's Inheritance 05",series:"Emilie's Inheritance",action:"CREATE_FOLDER",folder:"/Emilie's Inheritance/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+  {leftFile:"Good Devils Don't Play",series:"Good Devils",action:"CREATE_FOLDER",folder:"/Good Devils Don't Play Fair With Evil/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+  {leftFile:"Quick Stops v03",series:"Quick Stops v03",action:"CREATE_FOLDER",folder:"/Quick Stops v03/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+  {leftFile:"Reborn Library Edition",series:"Reborn Library",action:"CREATE_FOLDER",folder:"/Reborn Library Edition/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+  {leftFile:"Royals 001",series:"Royals",action:"CREATE_FOLDER",folder:"/Royals/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+  {leftFile:"The Order Of Saint Sophia",series:"The Order Of Saint Sophia",action:"CREATE_FOLDER",folder:"/The Order Of Saint Sophia/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+  {leftFile:"The Shadower (2026)",series:"The Shadower",action:"CREATE_FOLDER",folder:"/The Shadower/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+  {leftFile:"Uri Tupka and the Gods",series:"Uri Tupka and the Gods",action:"CREATE_FOLDER",folder:"/Uri Tupka and the Gods/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+  {leftFile:"Uri Tupka (Digital-HD)",series:"Uri Tupka and the Gods",action:"CREATE_FOLDER",folder:"/Uri Tupka and the Gods/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder (duplicate series)",moveSource:"LEFT"},
+  {leftFile:"WitchCraft v01",series:"WitchCraft v01",action:"CREATE_FOLDER",folder:"/WitchCraft v01/",matches:0,hasFolder:"NO",hasFiles:"NO",strategy:"Create new folder",moveSource:"LEFT"},
+];
+
+const SRC_DIR  = "/home/nesha/Downloads/comics_download/";
+const DEST_DIR = "/mnt/extramedia/Comics";
+
+// Working copy (folders can be edited)
+const data = RAW.map((r, i) => ({ ...r, id: i, destOverride: null }));
+
+// ─── Render ───────────────────────────────────────────────────────────────
+function getRows(section) {
+  return section === 'consolidate'
+    ? data.filter(r => r.action === 'CONSOLIDATE')
+    : data.filter(r => r.action === 'CREATE_FOLDER_WITH_FILES' || r.action === 'COPY_TO_BASE');
+}
+
+function effectiveFolder(row) {
+  return row.destOverride !== null ? row.destOverride : row.folder;
+}
+
+function renderConsolidate(rows) {
+  const tbody = document.getElementById('body-consolidate');
+  tbody.innerHTML = '';
+  rows.forEach(row => {
+    const hasFolderPill = row.hasFolder === 'YES'
+      ? '<span class="pill pill-yes">YES</span>'
+      : '<span class="pill pill-no">NO</span>';
+    const hasFilesPill = row.hasFiles !== 'NO'
+      ? '<span class="pill pill-yes">' + row.hasFiles + '</span>'
+      : '<span class="pill pill-no">NO</span>';
+    const fuzzy = row.strategy.includes('fuzzy') ? ' <span style="color:#f0c040;font-size:0.7rem;" title="Fuzzy match — verify">~</span>' : '';
+    const tr = document.createElement('tr');
+    tr.id = 'row-' + row.id;
+    tr.innerHTML = `
+      <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
+      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div></td>
+      <td>${row.series}${fuzzy}</td>
+      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
+      <td class="match-count">${row.matches}</td>
+      <td>${hasFolderPill}</td>
+      <td>${hasFilesPill}</td>
+      <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
+      <td><div class="actions-cell">
+        <button class="btn btn-sm btn-outline" onclick="openDetails(${row.id})">Details</button>
+        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit Dest</button>
+      </div></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderNewfolder(rows) {
+  const tbody = document.getElementById('body-newfolder');
+  tbody.innerHTML = '';
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.id = 'row-' + row.id;
+    tr.innerHTML = `
+      <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
+      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div></td>
+      <td>${row.series}</td>
+      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
+      <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
+      <td><div class="actions-cell">
+        <button class="btn btn-sm btn-outline" onclick="openDetails(${row.id})">Details</button>
+        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit Dest</button>
+      </div></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderAll() {
+  const consolidateRows = getRows('consolidate');
+  const newfolderRows = getRows('newfolder');
+
+  renderConsolidate(consolidateRows);
+  renderNewfolder(newfolderRows);
+
+  // Update badge counts
+  document.getElementById('badge-consolidate').textContent = consolidateRows.length;
+  document.getElementById('badge-newfolder').textContent = newfolderRows.length;
+  document.getElementById('stat-consolidate').textContent = consolidateRows.length;
+  document.getElementById('stat-newfolder').textContent = newfolderRows.length;
+  document.getElementById('stat-files').textContent = data.length;
+
+  updateSelected();
+}
+
+// ─── Filter ───────────────────────────────────────────────────────────────
+function filterTable(section) {
+  let rows = getRows(section);
+
+  if (section === 'consolidate') {
+    const q      = document.getElementById('search-consolidate').value.toLowerCase();
+    const folder = document.getElementById('filter-folder').value;
+    const msrc   = document.getElementById('filter-move-source').value;
+    if (q)      rows = rows.filter(r => r.leftFile.toLowerCase().includes(q) || r.series.toLowerCase().includes(q));
+    if (folder) rows = rows.filter(r => r.hasFolder === folder);
+    if (msrc)   rows = rows.filter(r => r.moveSource.startsWith(msrc));
+    renderConsolidate(rows);
+    document.getElementById('badge-consolidate').textContent = rows.length;
+  } else {
+    const q = document.getElementById('search-newfolder').value.toLowerCase();
+    if (q) rows = rows.filter(r => r.leftFile.toLowerCase().includes(q) || r.series.toLowerCase().includes(q));
+    renderNewfolder(rows);
+    document.getElementById('badge-newfolder').textContent = rows.length;
+  }
+}
+
+// ─── Selection ────────────────────────────────────────────────────────────
+function updateSelected() {
+  const all = document.querySelectorAll('.row-chk:checked');
+  document.getElementById('stat-selected').textContent = all.length;
+}
+
+function selectAll(section) {
+  const rows = getRows(section);
+  rows.forEach(r => {
+    const chk = document.querySelector(`.row-chk[data-id="${r.id}"]`);
+    if (chk) chk.checked = true;
+  });
+  updateSelected();
+}
+
+function deselectAll(section) {
+  const rows = getRows(section);
+  rows.forEach(r => {
+    const chk = document.querySelector(`.row-chk[data-id="${r.id}"]`);
+    if (chk) chk.checked = false;
+  });
+  updateSelected();
+}
+
+function toggleAllInSection(section, checked) {
+  const rows = getRows(section);
+  rows.forEach(r => {
+    const chk = document.querySelector(`.row-chk[data-id="${r.id}"]`);
+    if (chk) chk.checked = checked;
+  });
+  updateSelected();
+}
+
+function getSelectedRows() {
+  const ids = [...document.querySelectorAll('.row-chk:checked')].map(c => +c.dataset.id);
+  return ids.length ? data.filter(r => ids.includes(r.id)) : data;
+}
+
+// ─── Modals ───────────────────────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.modal-backdrop').forEach(m =>
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); })
+);
+
+// Details
+function openDetails(id) {
+  const row = data.find(r => r.id === id);
+  document.getElementById('details-title').textContent = row.series;
+  const g = document.getElementById('details-grid');
+  const fields = [
+    ['Left Panel File', row.leftFile],
+    ['Series Name',    row.series],
+    ['Action Type',    row.action],
+    ['Destination',    effectiveFolder(row)],
+    ['Matches',        row.matches],
+    ['Has Existing Folder', row.hasFolder],
+    ['Has Existing Files',  row.hasFiles],
+    ['Consolidation Strategy', row.strategy],
+    ['Move Source',    row.moveSource],
+  ];
+  g.innerHTML = fields.map(([l, v]) =>
+    `<div class="detail-label">${l}</div><div class="detail-value">${v}</div>`
+  ).join('');
+  openModal('modal-details');
+}
+
+// Edit Destination
+let _editId = null;
+function openEditDest(id) {
+  _editId = id;
+  const row = data.find(r => r.id === id);
+  document.getElementById('dest-file-label').textContent = row.leftFile;
+  document.getElementById('dest-input').value = effectiveFolder(row);
+  openModal('modal-dest');
+}
+function saveDestination() {
+  const row = data.find(r => r.id === _editId);
+  const val = document.getElementById('dest-input').value.trim();
+  row.destOverride = val || null;
+  closeModal('modal-dest');
+  renderAll();
+  toast('Destination updated.');
+}
+
+// Preview Moves
+function openPreview() {
+  const sel = getSelectedRows();
+  document.getElementById('preview-subtitle').textContent =
+    sel.length === data.length
+      ? `Showing all ${data.length} planned moves`
+      : `Showing ${sel.length} selected moves`;
+
+  const ul = document.getElementById('preview-list');
+  ul.innerHTML = '';
+  sel.forEach(row => {
+    const dest = DEST_DIR + effectiveFolder(row);
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <span class="arrow">&#8594;</span>
+      <span>
+        <span class="move-src">${SRC_DIR}${row.leftFile}</span><br>
+        <span class="move-dst">${dest}</span>
+        <span style="color:#b0b0c0;font-size:0.7rem;margin-left:8px;">[${row.action}]</span>
+      </span>`;
+    ul.appendChild(li);
+  });
+  openModal('modal-preview');
+}
+
+// Generate Script
+function openGenerateScript() {
+  closeModal('modal-preview');
+  const sel = getSelectedRows();
+  document.getElementById('script-subtitle').textContent =
+    `${sel.length} operations — copy this script and run manually`;
+
+  const lines = [
+    '#!/usr/bin/env python3',
+    '"""',
+    'Comic File Organizer — Auto-generated move script',
+    `Generated: ${new Date().toLocaleString()}`,
+    `Source dir: ${SRC_DIR}`,
+    `Dest dir:   ${DEST_DIR}`,
+    `Operations: ${sel.length}`,
+    '"""',
+    '',
+    'import shutil, os, sys',
+    '',
+    'SRC_DIR  = "' + SRC_DIR + '"',
+    'DEST_DIR = "' + DEST_DIR + '"',
+    'DRY_RUN  = "--dry-run" in sys.argv  # pass --dry-run to preview without moving',
+    '',
+    'moves = [',
+  ];
+
+  sel.forEach(row => {
+    const folder = DEST_DIR + effectiveFolder(row);
+    lines.push(`    # ${row.action}: ${row.series}`);
+    lines.push(`    ("${row.leftFile}", "${folder}"),`);
+  });
+
+  lines.push('');
+
+  lines.push(
+    ']',
+    '',
+    'def move_file(src_name, dest_folder):',
+    '    src  = os.path.join(SRC_DIR, src_name)',
+    '    dest = os.path.join(dest_folder, src_name)',
+    '    if not os.path.exists(src):',
+    '        print(f"  SKIP (not found): {src}")',
+    '        return',
+    '    if DRY_RUN:',
+    '        print(f"  DRY-RUN: {src}  ->  {dest}")',
+    '        return',
+    '    os.makedirs(dest_folder, exist_ok=True)',
+    '    shutil.move(src, dest)',
+    '    print(f"  MOVED: {src}  ->  {dest}")',
+    '',
+    'print(f"Starting {len(moves)} move operations (DRY_RUN={DRY_RUN})\\n")',
+    'for src_name, dest_folder in moves:',
+    '    move_file(src_name, dest_folder)',
+    'print("\\nDone.")',
+  );
+
+  document.getElementById('script-out').value = lines.join('\n');
+  openModal('modal-script');
+}
+
+// Copy / Download
+function copyScript() {
+  const ta = document.getElementById('script-out');
+  ta.select();
+  document.execCommand('copy');
+  toast('Script copied to clipboard!');
+}
+
+function downloadScript() {
+  const content = document.getElementById('script-out').value;
+  const a = document.createElement('a');
+  a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(content);
+  a.download = 'comic_move.py';
+  a.click();
+  toast('Script downloaded as comic_move.py');
+}
+
+// Reload CSV
+function reloadCSV() {
+  fetch("/api/csv")
+    .then(r => r.json())
+    .then(csvData => {
+      data.splice(0, data.length, ...csvData.map((r, i) => ({
+        ...r,
+        id: i,
+        destOverride: null,
+        matches: parseInt(r["Right Panel Matches (Count)"]) || 0,
+        hasFolder: r["Has Existing Folder"],
+        hasFiles: r["Has Existing Files"],
+        leftFile: r["Left Panel File"],
+        series: r["Series Name"],
+        action: r["Action Type"],
+        folder: r["Suggested Folder Name"],
+        strategy: r["Consolidation Strategy"],
+        moveSource: r["Move Source"],
+      })));
+      renderAll();
+      toast(`✅ CSV reloaded: ${csvData.length} rows`);
+    })
+    .catch(e => toast(`❌ Error loading CSV: ${e.message}`));
+}
+
+// Export Report
+function exportReport() {
+  const headers = ['Left Panel File','Series Name','Action Type','Destination Folder',
+                   'Right Panel Matches','Has Existing Folder','Has Existing Files',
+                   'Consolidation Strategy','Move Source'];
+  const rows = [headers.join(',')];
+  data.forEach(r => {
+    const cols = [
+      `"${r.leftFile}"`, `"${r.series}"`, r.action,
+      `"${effectiveFolder(r)}"`, r.matches, r.hasFolder, `"${r.hasFiles}"`,
+      `"${r.strategy}"`, `"${r.moveSource}"`
+    ];
+    rows.push(cols.join(','));
+  });
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.join('\n'));
+  a.download = 'comic_organizer_report.csv';
+  a.click();
+  toast('Report exported as CSV');
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+// ─── Column Resizing ──────────────────────────────────────────────────────
+function initializeColumnResizing(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+
+  const headers = table.querySelectorAll("th");
+  let resizingColumn = null;
+  let startX = 0;
+  let startWidth = 0;
+
+  // Load saved widths from localStorage
+  const saved = localStorage.getItem(`table-widths-${tableId}`);
+  if (saved) {
+    try {
+      const widths = JSON.parse(saved);
+      headers.forEach((h, i) => {
+        if (widths[i]) h.style.width = widths[i] + "px";
+      });
+    } catch (e) {}
+  }
+
+  headers.forEach((header, index) => {
+    const handle = header.querySelector(".resize-handle");
+    if (!handle) return;
+
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      resizingColumn = header;
+      startX = e.clientX;
+      startWidth = header.offsetWidth;
+      handle.classList.add("active");
+
+      // Mouse move handler
+      const onMouseMove = (e) => {
+        if (!resizingColumn) return;
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(50, startWidth + diff);
+        resizingColumn.style.width = newWidth + "px";
+      };
+
+      // Mouse up handler
+      const onMouseUp = () => {
+        if (resizingColumn) {
+          const handle = resizingColumn.querySelector(".resize-handle");
+          if (handle) handle.classList.remove("active");
+
+          // Save widths to localStorage
+          const widths = Array.from(headers).map((h) => h.offsetWidth);
+          localStorage.setItem(`table-widths-${tableId}`, JSON.stringify(widths));
+        }
+
+        resizingColumn = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+
+    // Double-click to reset to default width
+    handle.addEventListener("dblclick", () => {
+      const defaults = {
+        "tbl-consolidate": [36, 220, 140, 160, 40, 100, 100, 320, 180],
+        "tbl-newfolder": [36, 220, 140, 160, 320, 180],
+      };
+      const defaultWidths = defaults[tableId] || [];
+      headers.forEach((h, i) => {
+        if (defaultWidths[i]) h.style.width = defaultWidths[i] + "px";
+      });
+      localStorage.removeItem(`table-widths-${tableId}`);
+      toast("Column widths reset to default");
+    });
+  });
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+async function initApp() {
+  console.log("🚀 initApp() starting...");
+  try {
+    console.log("📡 Fetching CSV from /api/csv...");
+    const response = await fetch("/api/csv");
+    console.log(`Response status: ${response.status}`);
+
+    if (response.ok) {
+      const csvData = await response.json();
+      console.log(`📦 CSV loaded: ${csvData.length} rows`);
+
+      // Replace hardcoded data with fetched data
+      data.splice(0, data.length, ...csvData.map((r, i) => ({
+        ...r,
+        id: i,
+        destOverride: null,
+        matches: parseInt(r["Right Panel Matches (Count)"]) || 0,
+        hasFolder: r["Has Existing Folder"],
+        hasFiles: r["Has Existing Files"],
+        leftFile: r["Left Panel File"],
+        series: r["Series Name"],
+        action: r["Action Type"],
+        folder: r["Suggested Folder Name"],
+        strategy: r["Consolidation Strategy"],
+        moveSource: r["Move Source"],
+      })));
+      console.log(`✅ Data array populated with ${data.length} items`);
+    } else {
+      console.error(`❌ CSV fetch failed: ${response.status} ${response.statusText}`);
+    }
+  } catch (e) {
+    console.error("❌ Error loading CSV:", e.message, e);
+  }
+
+  console.log("🎨 Rendering tables...");
+  renderAll();
+  initializeColumnResizing("tbl-consolidate");
+  initializeColumnResizing("tbl-newfolder");
+  console.log("✅ App initialized");
+}
+
+// Auto-initialize on page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
+</script>
+</body>
+</html>

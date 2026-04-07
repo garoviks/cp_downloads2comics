@@ -1,0 +1,73 @@
+total 14464468
+-rw-r--r-- 1 nesha nesha  186384268 Apr  1 21:47 2000AD prog 2476 (2026) (4320p) (juvecube).cbz
+-rw-r--r-- 1 nesha nesha   46658068 Apr  5 19:35 Amazonia 04 (Cinebook 2025) (webrip) (MagicMan-DCP).cbr
+-rw-r--r-- 1 nesha nesha   41781226 Apr  1 21:47 A Mischief of Magpies Ashcan (2026) (digital) (tomjoad).cbz
+-rw-r--r-- 1 nesha nesha  121038910 Mar 27 20:41 Animal Stories (2022) (digital) (Dr.Vink).cbz
+-rw-r--r-- 1 nesha nesha   51879003 Apr  2 18:25 Astro Quantum 003 (of 005) (2026) (Limited Series) (Mad Cave Studios) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha   48254470 Apr  2 18:27 Babs - The Black Road South 003 (2026) (Digital) (Mephisto-Empire).cbr
+-rw-r--r-- 1 nesha nesha   59860517 Mar 31 18:53 Billy & Buddy v10 - Walks on the Wild Side (Cinebook 2026) (webrip) (MagicMan-DCP).cbr
+-rw-r--r-- 1 nesha nesha   95958784 Mar 29 21:09 Carmen Red Claw - Belly of the Beast 03 (of 04) (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha          0 Apr  5 19:44 comics_download.txt
+-rw-r--r-- 1 nesha nesha  145659522 Apr  2 18:27 Cruel Universe II 009 (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha   58154239 Mar 26 18:43 Death Fight Forever 002 (of 005) (2026) (Limited Series) (Image) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha  114553678 Mar 30 08:29 Emilie's Inheritance 05 - The Arcana (Cinebook 2026) (webrip) (MagicMan-DCP).cbr
+-rw-r--r-- 1 nesha nesha   73744050 Apr  2 18:25 Exit City 005 (2026) (Series) (Mad Cave Studios) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha   53371533 Mar 26 18:41 Feral 021 (2024) (Series) (Image) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha  413927299 Apr  2 18:26 Feral v04 - Pet City (2026) (Digital) (DR & Quinch-Empire).cbr
+-rw-r--r-- 1 nesha nesha   68603357 Mar 26 18:41 Ferocious 005 (2026) (digital) (Knight Ripper-Empire).cbr
+-rw-r--r-- 1 nesha nesha   81594377 Mar 26 18:41 Final Boss 005 (of 004) (2025) (Limited Series) (Image) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha   58323112 Mar 26 18:43 Geiger 022 (2026) (Series) (Image Comics) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha   77787814 Apr  2 18:25 Ghost Machine - The Official Guidebook 01 (of 05) (2026) (Digital) (DR & Quinch-Empire).cbr
+-rw-r--r-- 1 nesha nesha   76942822 Mar 26 18:43 Ghost Pepper 009 (2026) (Series) (Image) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha  428135864 Mar 26 18:43 Give Me Liberty! A Revised History of the American Revolution (2025) (digital) (Mr Norrell-Empire).cbr
+-rw-r--r-- 1 nesha nesha   58290661 Apr  2 18:26 Gomer Goof 12 - Twenty-One Goof Salute (Cinebook 2025) (webrip) (MagicMan-DCP).cbr
+-rw-r--r-- 1 nesha nesha  125247835 Apr  5 08:09 Good Devils Don't Play Fair With Evil (2025) (Digital) (Zone-Empire).cbr
+-rw-r--r-- 1 nesha nesha  156706523 Apr  2 18:27 Groo - The Prophecy 01 (of 04) (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha 1529582648 Apr  5 08:09 Gunnerkrigg Court v02 - Reason - Materia (2025) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha   66218183 Apr  5 19:35 Harry Dickson 02 - The Court of Terror (Cinebook 2024) (webrip) (MagicMan-DCP).cbr
+-rw-r--r-- 1 nesha nesha   65769131 Mar 26 18:41 Honor and Curse Eternal 001 (2026) (2 covers) (digital) (Knight Ripper-Empire).cbr
+-rw-r--r-- 1 nesha nesha   56184372 Mar 26 18:41 Hyde Street 011 (2026) (Digital) (Mephisto-Empire).cbr
+-rw-r--r-- 1 nesha nesha   66975343 Mar 26 18:41 Is Ted OK 002 (2026) (digital) (Knight Ripper-Empire).cbr
+-rw-r--r-- 1 nesha nesha   60471181 Apr  2 18:27 Kaya 034 (2026) (digital) (Goobadaddy-Empire).cbz
+-rw-r--r-- 1 nesha nesha 1322713552 Apr  5 08:11 Kill All Immortals (2025) (digital) (ElleryQueen-DCP).cbz.encrypted.part
+-rw-r--r-- 1 nesha nesha  877450392 Apr  5 08:09 Kill All Immortals (2025) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha  764144545 Apr  5 08:10 Kill Me & Other Curiosities (2024) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha   88812902 Apr  2 18:25 Killroy Is Here (2026) (Digital) (Zone-Empire).cbr
+-rw-r--r-- 1 nesha nesha  269383192 Apr  5 08:08 Let This One Be A Devil v01 (2025) (Collection) (Dark Horse Comics) (Digital-HD) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha 1441578496 Apr  5 08:11 Let This One Be a Devil v01 (2025) (digital) (Son of Ultron-Empire).cbr.encrypted.part
+-rw-r--r-- 1 nesha nesha   76382298 Mar 26 18:41 Liquidator 005 (2026) (digital) (Knight Ripper-Empire).cbr
+-rw-r--r-- 1 nesha nesha  117008846 Mar 29 21:10 Megaghost 2 001 (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha   87890692 Mar 26 18:41 Minor Arcana 015 (2026) (digital) (Goobadaddy-Empire).cbz
+-rw-r--r-- 1 nesha nesha  183387313 Apr  2 18:27 Minor Threats - The Last Devil Left Alive 004 (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha  100591990 Mar 29 21:10 Miss Truesdale and the Rise of Man 004 (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha  614681708 Apr  1 21:48 Quick Stops v03 (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha 1062086947 Apr  5 08:10 Reborn Library Edition (2026) (Digital) (XRA-Empire).cbz
+-rw-r--r-- 1 nesha nesha   74118377 Mar 26 18:41 Return to Sleepy Hollow 005 (2026) (Digital) (Pyrate-DCP).cbz
+-rw-r--r-- 1 nesha nesha  110015803 Apr  2 18:25 Royals 001 (2026) (Digital) (Zone-Empire).cbr
+drwxr-xr-x 2 nesha nesha       4096 Apr  5 08:08 Sha 01-03
+-rw-r--r-- 1 nesha nesha   92629928 Apr  5 08:08 Sha 01-03.zip
+-rw-r--r-- 1 nesha nesha   69214749 Apr  2 18:25 Speed Racer 007 (2026) (Series) (Mad Cave Studios) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha  740870114 Apr  1 21:47 TexArcanum (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha   34284817 Apr  2 18:27 The Autumn Kingdom - The Wraithbound Queen 003 (2026) (Digital) (Mephisto-Empire).cbr
+drwxr-xr-x 2 nesha nesha       4096 Apr  5 08:08 The Bank 01-02 (2025)
+-rw-r--r-- 1 nesha nesha  130493194 Apr  5 08:08 The Bank 01-02 (2025).zip
+-rw-r--r-- 1 nesha nesha  118997656 Mar 31 18:53 The Center Holds 02 (of 04) (2026) (Digital Rip) (Hourman-DCP).cbr
+-rw-r--r-- 1 nesha nesha   83432294 Mar 26 18:41 The Department of Truth 036 (2026) (digital) (Goobadaddy-Empire).cbz
+-rw-r--r-- 1 nesha nesha   59765346 Mar 26 18:41 The Florida Hippopotamus Cocaine Massacre 002 (2026) (digital) (Knight Ripper-Empire).cbr
+-rw-r--r-- 1 nesha nesha   32232143 Mar 26 18:43 The Last Day of H.P. Lovecraft 05 (of 05) (2026) (Digital Rip) (Hourman-DCP).cbr
+-rw-r--r-- 1 nesha nesha   60265073 Mar 26 18:41 The New Space Age 004 (2026) (digital) (Knight Ripper-Empire).cbr
+-rw-r--r-- 1 nesha nesha   31810433 Apr  1 21:47 The Nightmare Before Christmas - The Shiver of Christmas Town 004 (of 004) (2026) (Limited Series) (Dynamite Entertainment) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha   46216089 Mar 26 18:43 The Order Of Saint Sophia 001 (of 004) (2026) (Limited Series) (Antarctic Press) (Digital) (LeDuch).cbz
+drwxr-xr-x 2 nesha nesha       4096 Mar 31 18:53 The Owl 001-002 (1967-1968)
+-rw-r--r-- 1 nesha nesha   39901982 Mar 26 18:41 The Peril of the Brutal Dark - An Ezra Cain Mystery 002 (2026) (Digital) (Pyrate-DCP).cbz
+-rw-r--r-- 1 nesha nesha  109939872 Apr  2 18:25 The Sacrificers 020 (2026) (Digital) (Zone-Empire).cbr
+-rw-r--r-- 1 nesha nesha  230439969 Mar 26 18:42 The Shadower (2026) (Graphic Novel) (Top Shelf) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha   43732225 Apr  2 18:27 Tim Burton's The Nightmare Before Christmas - The Shiver of Christmas Town 004 (2026) (4 covers) (digital) (Salem-Empire).cbr
+-rw-r--r-- 1 nesha nesha   74209761 Mar 29 21:10 Tomb Raider - Sacred Artifacts 03 (of 04) (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha  213237736 Apr  2 18:27 Touched by a Demon 003 (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha  146848395 Apr  2 18:25 Universal Monsters - Phantom of the Opera 002 (2026) (Digital) (Zone-Empire).cbr
+-rw-r--r-- 1 nesha nesha  347403581 Apr  1 21:48 Uri Tupka and the Gods - Another Story from Lands Unknown (2026) (digital) (Son of Ultron-Empire).cbr
+-rw-r--r-- 1 nesha nesha   85108039 Apr  1 21:47 Uri Tupka and the Gods - Another Story from Lands Unknown (2026) (Graphic Novel) (Dark Horse Comics) (Digital-HD) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha   56055758 Mar 26 18:41 w0rldtr33 019 (2026) (Series) (Image) (Digital) (LeDuch).cbz
+-rw-r--r-- 1 nesha nesha   47508043 Mar 26 18:41 White Sky 002 (2026) (Digital) (Mephisto-Empire).cbr
+-rw-r--r-- 1 nesha nesha  238377920 Apr  5 08:09 WitchCraft v01 (1996) (hybrid) (Marika-Empire).cbz
