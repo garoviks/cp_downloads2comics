@@ -729,7 +729,18 @@ def main():
     dest_map = scan_destination_directory()
 
     if not src_map and not subfolders:
-        print("❌ No files found in source directory.")
+        print("✅ No files found in source directory — writing empty CSV.")
+        csv_columns = [
+            "Left Folder", "File Count", "Left Panel File", "Series Name",
+            "Action Type", "Suggested Folder Name", "Right Panel Matches (Count)",
+            "Has Existing Folder", "Has Existing Files", "Consolidation Strategy",
+            "Move Source", "Files Details", "Right Loose Files",
+        ]
+        output_dir = OUTPUT_FILE.parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
+            csv.DictWriter(f, fieldnames=csv_columns).writeheader()
+        print(f"✅ CSV written to: {OUTPUT_FILE}")
         return
 
     # Generate analysis rows
