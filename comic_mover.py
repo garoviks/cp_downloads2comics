@@ -166,8 +166,9 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
             # Move to series folder
             dest_folder_path = DEST_DIR / dest_folder.strip('/')
 
-        # Add move for left panel file
-        op.add_move(src_file, dest_folder_path / left_file, "FILE")
+        # Add move for left panel file (use just filename, not relative path)
+        filename = Path(left_file).name
+        op.add_move(src_file, dest_folder_path / filename, "FILE")
 
         # Handle right files if present (both CONSOLIDATE and CREATE_FOLDER_WITH_FILES)
         if action in ["CONSOLIDATE", "CREATE_FOLDER_WITH_FILES"]:
