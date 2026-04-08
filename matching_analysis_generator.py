@@ -504,12 +504,17 @@ def find_publisher_match(filename: str, dest_map: Dict) -> Optional[Tuple[str, D
 def find_exact_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dict]]:
     """
     Rule 3a: Find exact series name match in destination (case-insensitive).
+    Only returns a match if the dest entry has an actual named folder.
+    (Files that happen to share a series name but live in a different folder
+    are not counted — fuzzy matching will find their parent folder instead.)
     Returns: (matched_series_name, match_data) or None
     """
     src_lower = src_series.lower()
     for dest_series, dest_data in dest_map.items():
         if dest_series.lower() == src_lower:
-            return (dest_series, dest_data)
+            # Only count as a real match if a dedicated folder exists
+            if dest_data.get("folders"):
+                return (dest_series, dest_data)
     return None
 
 
@@ -519,6 +524,8 @@ def find_fuzzy_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dic
     - Only if src_series > 5 characters
     - Check if src appears in dest or vice versa
     - Dest series must be > 3 characters
+    - Dest entry must have an actual folder (not just stray files)
+    - Prefer folder matches over file-only matches
     Returns: (matched_series_name, match_data) or None
     """
     if len(src_series) <= 5:
@@ -526,17 +533,31 @@ def find_fuzzy_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dic
 
     src_lower = src_series.lower()
 
+    folder_match = None   # Best match that has a folder
+    file_match = None     # Fallback match with only loose files
+
     for dest_series, dest_data in dest_map.items():
         if len(dest_series) <= 3:
             continue
 
+        # Skip exact self-match (same series name shouldn't fuzzy-match itself)
+        if dest_series == src_series:
+            continue
+
         dest_lower = dest_series.lower()
 
-        # Check if one contains the other
+        # Check if one contains the other (substring match)
         if src_lower in dest_lower or dest_lower in src_lower:
-            return (dest_series, dest_data)
+            has_folder = bool(dest_data.get("folders"))
+            has_files = bool(dest_data.get("files_in_folders") or dest_data.get("loose_files"))
 
-    return None
+            if has_folder and folder_match is None:
+                folder_match = (dest_series, dest_data)
+            elif has_files and file_match is None:
+                file_match = (dest_series, dest_data)
+
+    # Prefer folder matches
+    return folder_match or file_match or None
 
 
 def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Optional[str], Optional[Dict], str]:

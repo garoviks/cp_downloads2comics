@@ -67,6 +67,7 @@ class MoveOperation:
         self.dest_folder = dest_folder
         self.moves: List[Move] = []
         self.skipped_reason = None
+        self.source_subfolder: Optional[Path] = None  # Set for folder-level ops
 
     def add_move(self, src: Path, dst: Path, move_type: str = "FILE"):
         self.moves.append(Move(src, dst, move_type))
@@ -133,9 +134,11 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
     Returns list of MoveOperation objects.
 
     Action types:
-    - CONSOLIDATE: Move LEFT into existing folder (folder exists)
-    - CREATE_FOLDER_WITH_FILES: Create folder, move LEFT + loose RIGHT files
-    - COPY_TO_BASE: Copy LEFT to base Comics folder (no matches)
+    - CONSOLIDATE_FOLDER: Move all files from left subfolder into existing right folder (flattened)
+    - CREATE_FOLDER_FROM_FOLDER: Create new folder and move all files from left subfolder
+    - CONSOLIDATE: Move LEFT file into existing folder
+    - CREATE_FOLDER_WITH_FILES: Create folder, move LEFT file + loose RIGHT files
+    - COPY_TO_BASE: Move LEFT file to base Comics folder (no matches)
     """
     operations = []
 
@@ -144,9 +147,49 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
         series = row.get('Series Name', '').strip()
         dest_folder = row.get('Suggested Folder Name', '').strip()
         action = row.get('Action Type', '').strip()
-        move_source = row.get('Move Source', '').strip()
+        left_folder = row.get('Left Folder', '').strip()
+        files_details = row.get('Files Details', '').strip()
 
-        if not left_file or not series:
+        if not series:
+            continue
+
+        op = MoveOperation(row, series, dest_folder)
+
+        # ── Folder-level actions ──────────────────────────────────────────
+        if action in ("CONSOLIDATE_FOLDER", "CREATE_FOLDER_FROM_FOLDER"):
+            # Source is a subfolder, not a single file
+            src_subfolder = SRC_DIR / left_folder
+            if not src_subfolder.exists() or not src_subfolder.is_dir():
+                op.skipped_reason = f"Source folder not found: {src_subfolder}"
+                operations.append(op)
+                continue
+
+            # Get individual filenames from Files Details column
+            filenames = [f.strip() for f in files_details.split('|') if f.strip()]
+            if not filenames:
+                op.skipped_reason = f"No files listed in Files Details for folder: {left_folder}"
+                operations.append(op)
+                continue
+
+            # Determine destination folder
+            dest_folder_path = DEST_DIR / dest_folder.strip('/')
+
+            # Add a move for each file in the subfolder (flattened — just filename at dest)
+            for filename in filenames:
+                src_file = src_subfolder / filename
+                if src_file.exists():
+                    op.add_move(src_file, dest_folder_path / filename, "FILE")
+                else:
+                    print(f"   ⚠️  File not found in subfolder: {src_file}")
+
+            # Also include the source subfolder so we can delete it after moves
+            op.source_subfolder = src_subfolder
+
+            operations.append(op)
+            continue
+
+        # ── File-level actions ────────────────────────────────────────────
+        if not left_file:
             continue
 
         op = MoveOperation(row, series, dest_folder)
@@ -160,19 +203,16 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
 
         # Determine destination folder path
         if action == "COPY_TO_BASE":
-            # Copy to base folder
             dest_folder_path = DEST_DIR
         else:
-            # Move to series folder
             dest_folder_path = DEST_DIR / dest_folder.strip('/')
 
-        # Add move for left panel file (use just filename, not relative path)
+        # Add move for left panel file (just filename, not relative path)
         filename = Path(left_file).name
         op.add_move(src_file, dest_folder_path / filename, "FILE")
 
-        # Handle right files if present (both CONSOLIDATE and CREATE_FOLDER_WITH_FILES)
+        # Handle right files if present
         if action in ["CONSOLIDATE", "CREATE_FOLDER_WITH_FILES"]:
-            # Find and move loose right files matching this series
             loose_files = find_loose_right_files(series)
             for rf in loose_files:
                 op.add_move(rf, dest_folder_path / rf.name, "FILE")
@@ -249,7 +289,7 @@ def execute_moves(operations: List[MoveOperation], dry_run: bool = False) -> boo
         else:
             print(f"📁 Would create folder: {dest_folder}")
 
-        # Execute file moves (LEFT only)
+        # Execute file moves
         for move in op.moves:
             try:
                 if move.move_type == "FILE":
@@ -267,6 +307,17 @@ def execute_moves(operations: List[MoveOperation], dry_run: bool = False) -> boo
                 print(f"   ❌ {error_msg}")
                 move.error = error_msg
                 errors.append((op.series_name, error_msg))
+
+        # Delete empty source subfolder after all files moved
+        if not dry_run and op.source_subfolder and op.source_subfolder.exists():
+            remaining = list(op.source_subfolder.iterdir())
+            if not remaining:
+                op.source_subfolder.rmdir()
+                print(f"   🗑️  Deleted empty folder: {op.source_subfolder.name}/")
+            else:
+                print(f"   ⚠️  Folder not empty, keeping: {op.source_subfolder.name}/ ({len(remaining)} items remain)")
+        elif dry_run and op.source_subfolder:
+            print(f"   🗑️  Would delete empty folder: {op.source_subfolder.name}/")
 
         executed_ops.append(op)
 
