@@ -172,6 +172,16 @@
     font-weight: 700;
   }
   .badge-green { background: #2d6a4f; }
+  .badge-blue  { background: #1a5276; }
+
+  /* ── Expandable folder rows ── */
+  .folder-row td { font-weight: 600; cursor: pointer; }
+  .folder-row:hover td { background: #1a2a4a; }
+  .expand-btn { background: none; border: none; color: #a8dadc; cursor: pointer; font-size: 0.9rem; padding: 2px 6px; }
+  .file-subrow td { font-size: 0.78rem; color: #b0b0c0; background: #0d1b2a; padding: 3px 8px; }
+  .file-subrow td:first-child { padding-left: 32px; }
+  .pill-action-folder { background: #1a3a5c; color: #a8dadc; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
+  .pill-action-create  { background: #2d4a2d; color: #9fcf9f; padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; }
 
   /* ── Table ── */
   .table-wrap {
@@ -552,6 +562,36 @@
   </div>
 
   <!-- ══════════════════════════════════════════════════════════════════════════
+       SOURCE FOLDERS SECTION
+  ══════════════════════════════════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Source Folders</span>
+      <span class="badge badge-blue" id="badge-folders">0</span>
+      <span style="font-size:0.75rem;color:#b0b0c0;margin-left:4px;">Subfolders from source — click ▶ to expand files</span>
+    </div>
+
+    <div class="table-wrap">
+      <table id="tbl-folders">
+        <thead>
+          <tr>
+            <th style="width:36px;"></th>
+            <th style="width:36px;" title="Expand files">▶<div class="resize-handle"></div></th>
+            <th style="width:220px;">Source Folder<div class="resize-handle"></div></th>
+            <th style="width:100px;">Files<div class="resize-handle"></div></th>
+            <th style="width:140px;">Series Name<div class="resize-handle"></div></th>
+            <th style="width:180px;">Destination<div class="resize-handle"></div></th>
+            <th style="width:100px;">Action<div class="resize-handle"></div></th>
+            <th style="width:320px;">Strategy<div class="resize-handle"></div></th>
+            <th style="width:140px;">Actions<div class="resize-handle"></div></th>
+          </tr>
+        </thead>
+        <tbody id="body-folders"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
        CONSOLIDATIONS SECTION
   ══════════════════════════════════════════════════════════════════════════════ -->
   <div class="section">
@@ -877,9 +917,81 @@ async function consolidate() {
 
 // ── Table Functions ──
 function getRows(section) {
-  return section === 'consolidate'
-    ? data.filter(r => r.action === 'CONSOLIDATE')
-    : data.filter(r => r.action === 'CREATE_FOLDER_WITH_FILES' || r.action === 'COPY_TO_BASE');
+  if (section === 'folders') {
+    return data.filter(r => r.action === 'CONSOLIDATE_FOLDER' || r.action === 'CREATE_FOLDER_FROM_FOLDER');
+  }
+  if (section === 'consolidate') {
+    return data.filter(r => r.action === 'CONSOLIDATE');
+  }
+  return data.filter(r => r.action === 'CREATE_FOLDER_WITH_FILES' || r.action === 'COPY_TO_BASE');
+}
+
+function toggleFolderExpand(rowId) {
+  const subrows = document.querySelectorAll(`.file-subrow[data-parent="${rowId}"]`);
+  const btn = document.querySelector(`#folder-row-${rowId} .expand-btn`);
+  const hidden = subrows[0]?.classList.contains('hidden');
+  subrows.forEach(r => r.classList.toggle('hidden', !hidden));
+  if (btn) btn.textContent = hidden ? '▼' : '▶';
+}
+
+function renderFolders(rows) {
+  const tbody = document.getElementById('body-folders');
+  tbody.innerHTML = '';
+
+  rows.forEach(row => {
+    // Main folder row
+    const actionLabel = row.action === 'CONSOLIDATE_FOLDER'
+      ? '<span class="pill-action-folder">CONSOLIDATE</span>'
+      : '<span class="pill-action-create">CREATE FOLDER</span>';
+
+    const rightCount = parseInt(row['Right Panel Matches (Count)']) || 0;
+    const rightNote = rightCount > 0 ? ` <span style="color:#9fcf9f;font-size:0.75rem;">(+${rightCount} right)</span>` : '';
+
+    const tr = document.createElement('tr');
+    tr.className = 'folder-row';
+    tr.id = `folder-row-${row.id}`;
+    tr.innerHTML = `
+      <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
+      <td><button class="expand-btn" onclick="toggleFolderExpand(${row.id})">▶</button></td>
+      <td><div class="file-name" title="${row['Left Folder'] || ''}">${row['Left Folder'] || row.leftFile}/</div></td>
+      <td>${row['File Count'] || '?'} files${rightNote}</td>
+      <td>${row.series}</td>
+      <td><div class="folder-name">${effectiveFolder(row)}/</div></td>
+      <td>${actionLabel}</td>
+      <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
+      <td><div class="actions-cell">
+        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit</button>
+      </div></td>`;
+    tbody.appendChild(tr);
+
+    // Sub-rows: one per file in Files Details
+    const filesDetails = row['Files Details'] || '';
+    const rightLoose = row['Right Loose Files'] || '';
+    const leftFiles = filesDetails ? filesDetails.split('|').map(f => f.trim()).filter(Boolean) : [];
+    const rightFiles = rightLoose ? rightLoose.split('|').map(f => f.trim()).filter(Boolean) : [];
+
+    leftFiles.forEach(filename => {
+      const sub = document.createElement('tr');
+      sub.className = 'file-subrow hidden';
+      sub.dataset.parent = row.id;
+      sub.innerHTML = `
+        <td></td><td></td>
+        <td colspan="2"><span style="color:#a8dadc;">↳ LEFT:</span> ${filename}</td>
+        <td colspan="5" style="color:#7fb3b3;">→ ${effectiveFolder(row)}/${filename}</td>`;
+      tbody.appendChild(sub);
+    });
+
+    rightFiles.forEach(filename => {
+      const sub = document.createElement('tr');
+      sub.className = 'file-subrow hidden';
+      sub.dataset.parent = row.id;
+      sub.innerHTML = `
+        <td></td><td></td>
+        <td colspan="2"><span style="color:#9fcf9f;">↳ RIGHT loose:</span> ${filename}</td>
+        <td colspan="5" style="color:#7fb3b3;">→ ${effectiveFolder(row)}/${filename}</td>`;
+      tbody.appendChild(sub);
+    });
+  });
 }
 
 function effectiveFolder(row) {
@@ -936,12 +1048,15 @@ function renderNewfolder(rows) {
 }
 
 function renderAll() {
+  const folderRows     = getRows('folders');
   const consolidateRows = getRows('consolidate');
-  const newfolderRows = getRows('newfolder');
+  const newfolderRows  = getRows('newfolder');
 
+  renderFolders(folderRows);
   renderConsolidate(consolidateRows);
   renderNewfolder(newfolderRows);
 
+  document.getElementById('badge-folders').textContent    = folderRows.length;
   document.getElementById('badge-consolidate').textContent = consolidateRows.length;
   document.getElementById('badge-newfolder').textContent = newfolderRows.length;
   document.getElementById('stat-consolidate').textContent = consolidateRows.length;
