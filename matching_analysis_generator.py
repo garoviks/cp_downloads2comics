@@ -39,12 +39,12 @@ SRC_DIR = Path("/home/nesha/Downloads/comics_download/")
 DEST_DIR = Path("/mnt/extramedia/Comics")
 OUTPUT_FILE = SRC_DIR / "matching_analysis_consolidated.csv"  # Save CSV to left folder
 
-# Files to skip in source directory
+# Files to skip in source directory (loose files only, not folders)
 SKIP_PATTERNS = {
     "comics_download.txt",
-    "sha 01",  # More specific: "Sha 01-03.zip"
-    "the bank",
-    "the owl",
+    "sha 01",  # More specific: loose "Sha 01" files (not folders)
+    "the bank",  # Loose "The Bank" files (not folders)
+    "the owl",  # Loose "The Owl" files (not folders)
 }
 
 # Known folder names for exact matching (rule 1 priority)
@@ -150,6 +150,199 @@ def extract_series_name(filename: str) -> str:
     """Extract base series name from filename."""
     parsed = parse_filename(filename)
     return parsed['series']
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FOLDER-BASED CONSOLIDATION (NEW)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def normalize_name(name: str) -> str:
+    """
+    Normalize name for lenient matching:
+    - Remove articles (The, A, An)
+    - Remove volume indicators (v01, vol, 001-002, etc.)
+    - Remove years and parenthetical info
+    - Lowercase for comparison
+
+    Examples:
+      "The Owl 001-002 (1967-1968)" → "owl"
+      "The Bank 01-02 (2025)" → "bank"
+      "Sha 01-03" → "sha"
+    """
+    # Remove articles at start
+    normalized = re.sub(r'^\b(the|a|an)\s+', '', name, flags=re.IGNORECASE)
+
+    # Remove volume patterns (v01, vol, book, 001-002, etc.)
+    normalized = VOLUME_PATTERN.sub('', normalized)
+
+    # Remove years and parenthetical info
+    normalized = re.sub(r'\s*\([^)]*\)\s*', ' ', normalized)
+
+    # Remove issue numbers
+    normalized = ISSUE_PATTERN.sub('', normalized)
+
+    # Clean up spaces and lowercase
+    normalized = re.sub(r'\s+', ' ', normalized).strip().lower()
+
+    return normalized
+
+
+def extract_folder_series_name(folder_name: str) -> str:
+    """
+    Extract series name from folder name.
+
+    Examples:
+      "Sha 01-03" → "Sha"
+      "The Owl 001-002 (1967-1968)" → "The Owl"
+      "The Bank 01-02 (2025)" → "The Bank"
+    """
+    # Remove volume patterns
+    cleaned = VOLUME_PATTERN.sub('', folder_name).strip()
+
+    # Remove years and parenthetical info
+    cleaned = re.sub(r'\s*\([^)]*\)\s*', ' ', cleaned).strip()
+
+    # Remove trailing issue numbers
+    cleaned = re.sub(r'\s+\d+(?:-\d+)?$', '', cleaned).strip()
+
+    # Clean up spaces
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    return cleaned
+
+
+def find_matching_right_folders() -> Dict[str, str]:
+    """
+    Get all folders from right side, normalized for matching.
+    Returns: {normalized_name: actual_folder_name}
+
+    Example: {"owl": "Owl/", "bank": "Bank/", "the owl": "The Owl/"}
+    """
+    folder_map = {}
+
+    if not DEST_DIR.exists():
+        return folder_map
+
+    for item in DEST_DIR.iterdir():
+        if item.is_dir():
+            folder_name = item.name
+            normalized = normalize_name(folder_name)
+            if normalized:
+                folder_map[normalized] = folder_name
+
+    return folder_map
+
+
+def find_folder_match(folder_series: str, right_folders: Dict[str, str]) -> Tuple[Optional[str], str]:
+    """
+    Find matching folder on right side with STRICT matching.
+
+    Matching priority:
+    1. Exact match (after normalization)
+    2. First-word match (first word of series matches first word of folder)
+    3. NO fuzzy matching for folders (too risky for false positives)
+
+    Returns: (matched_folder_name, match_type)
+      match_type: "EXACT", "FIRST_WORD", or None if no match
+    """
+    if not folder_series or not right_folders:
+        return None, None
+
+    normalized_series = normalize_name(folder_series)
+    series_words = normalized_series.split()
+
+    if not series_words:
+        return None, None
+
+    # 1. Try exact match
+    if normalized_series in right_folders:
+        return right_folders[normalized_series], "EXACT"
+
+    # 2. Try first-word match (only if first word of series matches start of folder)
+    series_first_word = series_words[0]
+
+    for norm_folder, actual_folder in right_folders.items():
+        folder_words = norm_folder.split()
+
+        # Check if series first word matches any folder word AND
+        # the series first word is at the START of the folder name (not buried in middle)
+        if series_first_word in folder_words:
+            # Get position of match
+            match_index = folder_words.index(series_first_word)
+            # Accept match only if it's in first 2 words (series name usually at start)
+            if match_index <= 1:
+                return actual_folder, "FIRST_WORD"
+
+    # No match found
+    return None, None
+
+
+def scan_source_subfolders() -> Dict[str, Dict]:
+    """
+    Scan source directory for subfolders.
+
+    Returns: {
+        "Sha 01-03": {
+            "series": "Sha",
+            "files": ["Sha 01.cbr", "Sha 02.cbr"],
+            "folder_path": Path(...),
+            "matched_folder": "Sha/" or None,
+            "match_type": "EXACT"/"FUZZY"/None
+        },
+        ...
+    }
+    """
+    subfolders = {}
+
+    if not SRC_DIR.exists():
+        return subfolders
+
+    print(f"📁 Scanning source subfolders: {SRC_DIR}")
+
+    # Get all right-side folders for matching
+    right_folders = find_matching_right_folders()
+
+    # Find all direct subfolders (not recursive)
+    for item in sorted(SRC_DIR.iterdir()):
+        if not item.is_dir():
+            continue
+
+        folder_name = item.name
+
+        # Find comic files in this folder
+        comic_files = [f.name for f in item.rglob('*')
+                       if f.is_file() and f.suffix.lower() in {'.cbz', '.cbr'}]
+
+        if not comic_files:
+            continue
+
+        # Extract series from folder name
+        series = extract_folder_series_name(folder_name)
+
+        if not series:
+            continue
+
+        # Find matching folder on right side
+        matched_folder, match_type = find_folder_match(series, right_folders)
+
+        subfolders[folder_name] = {
+            "series": series,
+            "files": comic_files,
+            "folder_path": item,
+            "matched_folder": matched_folder,
+            "match_type": match_type,
+            "file_count": len(comic_files),
+        }
+
+        print(f"   📂 {folder_name}")
+        print(f"      Series: {series}, Files: {len(comic_files)}", end="")
+        if matched_folder:
+            print(f", Match: {matched_folder} ({match_type})")
+        else:
+            print(f", Match: None")
+
+    print()
+    return subfolders
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -507,10 +700,11 @@ def main():
     print("=" * 80 + "\n")
 
     # Scan directories
+    subfolders = scan_source_subfolders()
     src_map = scan_source_directory()
     dest_map = scan_destination_directory()
 
-    if not src_map:
+    if not src_map and not subfolders:
         print("❌ No files found in source directory.")
         return
 
@@ -518,15 +712,76 @@ def main():
     print("🔍 Analyzing and matching series...\n")
 
     rows = []
+    consolidate_folder_count = 0
+    create_folder_from_folder_count = 0
     consolidate_count = 0
     create_folder_with_files_count = 0
     copy_to_base_count = 0
     exact_matches = 0
     fuzzy_matches = 0
 
+    # STEP 1: Process all folders (with or without matches)
+    print("📁 Processing subfolders...")
+    processed_files = set()  # Track which files we've processed via folder
+
+    for folder_name, folder_data in sorted(subfolders.items()):
+        folder_series = folder_data["series"]
+        matched_folder = folder_data["matched_folder"]
+        match_type = folder_data["match_type"]
+        files_in_folder = folder_data["files"]
+        file_count = folder_data["file_count"]
+
+        if matched_folder:
+            # Folder has a match - consolidate all files together
+            consolidate_folder_count += 1
+            action_type = "CONSOLIDATE_FOLDER"
+            consolidation_strategy = f"Move all {file_count} file(s) from {folder_name}/ to {matched_folder} ({match_type} folder match)"
+            dest_folder = matched_folder.rstrip('/')
+            print(f"   ✅ {folder_name} → {matched_folder} ({match_type})")
+
+        else:
+            # Folder has NO match - create new folder and move all files
+            create_folder_from_folder_count += 1
+            action_type = "CREATE_FOLDER_FROM_FOLDER"
+            consolidation_strategy = f"Create new /{folder_series}/ folder and move all {file_count} file(s) from {folder_name}/"
+            dest_folder = folder_series
+            print(f"   📂 {folder_name} → CREATE new /{folder_series}/ folder")
+
+        # Create one row representing the folder consolidation
+        move_source = "LEFT"
+
+        # Create a representative row (folder level)
+        row = {
+            "Left Folder": folder_name,
+            "File Count": file_count,
+            "Left Panel File": f"[{file_count} files in {folder_name}/]",
+            "Series Name": folder_series,
+            "Action Type": action_type,
+            "Suggested Folder Name": dest_folder,
+            "Right Panel Matches (Count)": file_count if matched_folder else 0,
+            "Has Existing Folder": "YES" if matched_folder else "NO",
+            "Has Existing Files": "YES" if matched_folder else "NO",
+            "Consolidation Strategy": consolidation_strategy,
+            "Move Source": move_source,
+            "Confidence": match_type if matched_folder else "NEW",
+            "Files Details": " | ".join(files_in_folder),
+        }
+        rows.append(row)
+
+        # Mark these files as processed
+        for f in files_in_folder:
+            processed_files.add(f)
+
+    # STEP 2: Process remaining files (loose files + files in folders without matches)
+    print("\n📄 Processing individual files (loose + unmatched folders)...")
+
     for i, (src_series, src_files) in enumerate(sorted(src_map.items()), 1):
         # For each file in this series
         for src_filename in src_files:
+            # Skip if already processed via folder consolidation
+            if src_filename in processed_files:
+                continue
+
             # Find matches (pass filename for rule 1 & 2 checks)
             matched_series, match_data, confidence = find_matches(src_filename, src_series, dest_map)
 
@@ -549,6 +804,16 @@ def main():
             elif confidence == "FUZZY":
                 fuzzy_matches += 1
 
+            # Add folder info if file is in a subfolder
+            file_parent = None
+            for folder_name, folder_data in subfolders.items():
+                if src_filename in folder_data["files"]:
+                    file_parent = folder_name
+                    break
+
+            if file_parent:
+                row["Left Folder"] = file_parent
+
             rows.append(row)
 
         if i % 10 == 0:
@@ -562,6 +827,8 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     csv_columns = [
+        "Left Folder",
+        "File Count",
         "Left Panel File",
         "Series Name",
         "Action Type",
@@ -571,14 +838,15 @@ def main():
         "Has Existing Files",
         "Consolidation Strategy",
         "Move Source",
+        "Files Details",
     ]
 
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=csv_columns)
+        writer = csv.DictWriter(f, fieldnames=csv_columns, restval="")
         writer.writeheader()
         for row in rows:
-            # Remove 'Confidence' column before writing (internal use only)
-            output_row = {col: row[col] for col in csv_columns}
+            # Keep only CSV columns, ignore 'Confidence' (internal use only)
+            output_row = {col: row.get(col, "") for col in csv_columns}
             writer.writerow(output_row)
 
     print(f"✅ CSV written to: {OUTPUT_FILE}\n")
@@ -587,17 +855,36 @@ def main():
     print("=" * 80)
     print("📊 SUMMARY STATISTICS")
     print("=" * 80)
-    print(f"Total Left Panel Files: {len(rows)}")
+    print(f"Total Rows: {len(rows)}")
+    print(f"  - Folder consolidations: {consolidate_folder_count + create_folder_from_folder_count}")
+    print(f"  - Individual file operations: {len(rows) - (consolidate_folder_count + create_folder_from_folder_count)}")
     print(f"\nAction Types:")
+    print(f"  → CONSOLIDATE_FOLDER (move folder to existing folder): {consolidate_folder_count}")
+    print(f"  → CREATE_FOLDER_FROM_FOLDER (create folder for subfolder): {create_folder_from_folder_count}")
     print(f"  → CONSOLIDATE (move to existing folder): {consolidate_count}")
     print(f"  → CREATE_FOLDER_WITH_FILES (create folder + move files): {create_folder_with_files_count}")
     print(f"  → COPY_TO_BASE (copy to base Comics folder): {copy_to_base_count}")
     print(f"\nMatch Quality:")
-    print(f"  → Exact Matches: {exact_matches}")
+    print(f"  → Exact/Substring Matches: {exact_matches}")
     print(f"  → Fuzzy Matches: {fuzzy_matches}")
     print(f"\nRight Panel (Destination):")
     print(f"  → Total unique series: {len(dest_map)}")
     print("=" * 80 + "\n")
+
+    # List folder consolidations and creations for reference
+    folder_ops = [row for row in rows if row["Action Type"] in ["CONSOLIDATE_FOLDER", "CREATE_FOLDER_FROM_FOLDER"]]
+    if folder_ops:
+        print(f"📁 {len(folder_ops)} Folder-Level Operations:")
+        for row in folder_ops:
+            folder = row.get("Left Folder", "Unknown")
+            dest = row.get("Suggested Folder Name", "Unknown")
+            count = row.get("File Count", "?")
+            action = row.get("Action Type", "?")
+            if action == "CONSOLIDATE_FOLDER":
+                print(f"   → {folder} ({count} files) → {dest} (CONSOLIDATE)")
+            else:
+                print(f"   → {folder} ({count} files) → CREATE {dest}/ (NEW)")
+        print()
 
     # List unmatched series for reference
     unmatched = [row["Series Name"] for row in rows if row["Action Type"] == "COPY_TO_BASE"]
