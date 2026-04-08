@@ -191,7 +191,9 @@ def scan_source_directory() -> Dict[str, List[str]]:
             print(f"   ⚠️  [{i + 1}] WARNING: Cannot extract series from {filename}")
             continue
 
-        series_map[series].append(filename)
+        # Store relative path from source directory so files can be found later
+        relative_path = str(file_path.relative_to(SRC_DIR))
+        series_map[series].append(relative_path)
 
         if (i + 1) % 10 == 0:
             print(f"   [{i + 1}] Processed {filename} → {series}")

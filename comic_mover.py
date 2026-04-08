@@ -25,7 +25,7 @@ from typing import List, Dict, Tuple, Optional
 
 SRC_DIR = Path("/home/nesha/Downloads/comics_download/")
 DEST_DIR = Path("/mnt/extramedia/Comics")
-CSV_FILE = Path("/home/nesha/scripts/cp_downloads2comics/matching_analysis_consolidated.csv")
+CSV_FILE = SRC_DIR / "matching_analysis_consolidated.csv"  # Load CSV from left folder
 LOG_DIR = Path("/home/nesha/scripts/cp_downloads2comics/.logs")
 ROLLBACK_FILE = LOG_DIR / "last_execution.json"
 
