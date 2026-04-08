@@ -765,16 +765,39 @@ def main():
 
         else:
             # Folder has NO match - create new folder and move all files
+            # Also check for loose right-side files matching this series
             create_folder_from_folder_count += 1
             action_type = "CREATE_FOLDER_FROM_FOLDER"
-            consolidation_strategy = f"Create new /{folder_series}/ folder and move all {file_count} file(s) from {folder_name}/"
             dest_folder = folder_series
-            print(f"   📂 {folder_name} → CREATE new /{folder_series}/ folder")
+
+            # Find loose right-side files that should also move into the new folder
+            right_loose = []
+            if folder_series in dest_map:
+                right_loose = dest_map[folder_series].get("loose_files", [])
+
+            if right_loose:
+                right_count = len(right_loose)
+                consolidation_strategy = (
+                    f"Create new /{folder_series}/ folder, move all {file_count} file(s) "
+                    f"from {folder_name}/ + {right_count} loose right file(s) into it"
+                )
+                print(f"   📂 {folder_name} → CREATE new /{folder_series}/ folder + {right_count} right file(s)")
+            else:
+                consolidation_strategy = f"Create new /{folder_series}/ folder and move all {file_count} file(s) from {folder_name}/"
+                print(f"   📂 {folder_name} → CREATE new /{folder_series}/ folder")
 
         # Create one row representing the folder consolidation
         move_source = "LEFT"
 
         # Create a representative row (folder level)
+        # For CREATE_FOLDER_FROM_FOLDER, include right loose files in count
+        right_loose_for_row = []
+        if action_type == "CREATE_FOLDER_FROM_FOLDER" and folder_series in dest_map:
+            right_loose_for_row = dest_map[folder_series].get("loose_files", [])
+
+        right_match_count = len(right_loose_for_row) if right_loose_for_row else (file_count if matched_folder else 0)
+        has_existing_files = f"YES ({len(right_loose_for_row)})" if right_loose_for_row else ("YES" if matched_folder else "NO")
+
         row = {
             "Left Folder": folder_name,
             "File Count": file_count,
@@ -782,13 +805,14 @@ def main():
             "Series Name": folder_series,
             "Action Type": action_type,
             "Suggested Folder Name": dest_folder,
-            "Right Panel Matches (Count)": file_count if matched_folder else 0,
+            "Right Panel Matches (Count)": right_match_count,
             "Has Existing Folder": "YES" if matched_folder else "NO",
-            "Has Existing Files": "YES" if matched_folder else "NO",
+            "Has Existing Files": has_existing_files,
             "Consolidation Strategy": consolidation_strategy,
             "Move Source": move_source,
             "Confidence": match_type if matched_folder else "NEW",
             "Files Details": " | ".join(files_in_folder),
+            "Right Loose Files": " | ".join(right_loose_for_row),
         }
         rows.append(row)
 
@@ -863,6 +887,7 @@ def main():
         "Consolidation Strategy",
         "Move Source",
         "Files Details",
+        "Right Loose Files",
     ]
 
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:

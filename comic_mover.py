@@ -174,7 +174,7 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
             # Determine destination folder
             dest_folder_path = DEST_DIR / dest_folder.strip('/')
 
-            # Add a move for each file in the subfolder (flattened — just filename at dest)
+            # Add a move for each left file (flattened — just filename at dest)
             for filename in filenames:
                 src_file = src_subfolder / filename
                 if src_file.exists():
@@ -182,7 +182,19 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
                 else:
                     print(f"   ⚠️  File not found in subfolder: {src_file}")
 
-            # Also include the source subfolder so we can delete it after moves
+            # For CREATE_FOLDER_FROM_FOLDER also move loose right files into new folder
+            if action == "CREATE_FOLDER_FROM_FOLDER":
+                right_loose_str = row.get('Right Loose Files', '').strip()
+                if right_loose_str:
+                    right_filenames = [f.strip() for f in right_loose_str.split('|') if f.strip()]
+                    for rf_name in right_filenames:
+                        src_right = DEST_DIR / rf_name
+                        if src_right.exists():
+                            op.add_move(src_right, dest_folder_path / rf_name, "FILE")
+                        else:
+                            print(f"   ⚠️  Right loose file not found: {src_right}")
+
+            # Store source subfolder for cleanup after moves
             op.source_subfolder = src_subfolder
 
             operations.append(op)
