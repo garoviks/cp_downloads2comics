@@ -37,7 +37,7 @@ YEAR_PATTERN = re.compile(r'\((\d{4})\)')
 
 SRC_DIR = Path("/home/nesha/Downloads/comics_download/")
 DEST_DIR = Path("/mnt/extramedia/Comics")
-OUTPUT_FILE = Path("/home/nesha/scripts/cp_downloads2comics/matching_analysis_consolidated.csv")
+OUTPUT_FILE = SRC_DIR / "matching_analysis_consolidated.csv"  # Save CSV to left folder
 
 # Files to skip in source directory
 SKIP_PATTERNS = {
@@ -168,9 +168,9 @@ def scan_source_directory() -> Dict[str, List[str]]:
         return {}
 
     print(f"📂 Scanning source: {SRC_DIR}")
-    # Only include .cbz and .cbr files
-    all_files = [f for f in SRC_DIR.iterdir() if f.is_file()]
-    files = [f for f in all_files if f.suffix.lower() in {'.cbz', '.cbr'}]
+    # Recursively find .cbz and .cbr files in all subdirectories
+    files = [f for f in SRC_DIR.rglob('*') if f.is_file() and f.suffix.lower() in {'.cbz', '.cbr'}]
+    all_files = [f for f in SRC_DIR.rglob('*') if f.is_file()]
     print(f"   Found {len(files)} comic files (out of {len(all_files)} total)\n")
 
     for i, file_path in enumerate(sorted(files)):

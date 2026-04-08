@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comic File Organizer v2.0</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    background: #16213e;
+    border-bottom: 2px solid #0f3460;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 1.4rem;
+    color: #e94560;
+    flex: 1;
+  }
+  header h1 span { color: #a8dadc; font-weight: 400; font-size: 1rem; }
+
+  /* ── Folder Picker Section ── */
+  .folder-picker-section {
+    background: #0f3460;
+    padding: 16px 24px;
+    border-bottom: 1px solid #0f346080;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .folder-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .folder-picker label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #a8dadc;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  .folder-picker-input {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .folder-path {
+    flex: 1;
+    background: #1a1a2e;
+    border: 1px solid #0f346080;
+    color: #e0e0e0;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .folder-browse-btn {
+    background: #e94560;
+    color: #fff;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .folder-browse-btn:hover {
+    opacity: 0.85;
+  }
+
+  /* ── Control Buttons ── */
+  .control-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary   { background: #e94560; color: #fff; }
+  .btn-secondary { background: #0f3460; color: #a8dadc; border: 1px solid #a8dadc44; }
+  .btn-success   { background: #2d6a4f; color: #d8f3dc; }
+  .btn-sm        { padding: 4px 10px; font-size: 0.75rem; }
+  .btn-outline   { background: transparent; color: #a8dadc; border: 1px solid #a8dadc55; }
+  .btn-outline:hover { background: #a8dadc22; }
+
+  /* ── Main Content Area ── */
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Stats bar ── */
+  .stats-bar {
+    background: #0f3460;
+    padding: 10px 24px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid #0f346080;
+  }
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .stat-num {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #e94560;
+  }
+  .stat-label { font-size: 0.75rem; color: #a8dadc; text-transform: uppercase; letter-spacing: 1px; }
+
+  /* ── Sections ── */
+  .section {
+    margin: 20px 24px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #a8dadc;
+  }
+  .badge {
+    background: #e94560;
+    color: #fff;
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .badge-green { background: #2d6a4f; }
+
+  /* ── Table ── */
+  .table-wrap {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #0f346080;
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    table-layout: fixed;
+  }
+  thead th {
+    background: #16213e;
+    color: #a8dadc;
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    white-space: nowrap;
+    position: relative;
+    user-select: none;
+  }
+  thead th:first-child { width: 36px; text-align: center; }
+  tbody tr { border-bottom: 1px solid #0f346044; transition: background 0.1s; }
+  tbody tr:hover { background: #16213e88; }
+  tbody tr.selected { background: #0f346066; }
+  td { padding: 9px 12px; vertical-align: middle; }
+  td:first-child { text-align: center; }
+
+  .file-name {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #f0f0f0;
+    font-family: monospace;
+    font-size: 0.78rem;
+  }
+  .folder-name {
+    font-family: monospace;
+    color: #a8dadc;
+    font-size: 0.78rem;
+  }
+  .match-count {
+    text-align: center;
+    font-weight: 700;
+    color: #e94560;
+  }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  .pill-yes { background: #2d6a4f55; color: #d8f3dc; border: 1px solid #2d6a4f; }
+  .pill-no  { background: #3d171744; color: #f4a4a4; border: 1px solid #e9456044; }
+
+  .strategy-text {
+    color: #b0b0c0;
+    font-size: 0.75rem;
+    word-wrap: break-word;
+    white-space: normal;
+  }
+
+  .actions-cell { white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+
+  /* ── Resize Handle ── */
+  .resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.2s;
+  }
+  .resize-handle:hover {
+    background: #e94560;
+  }
+  .resize-handle.active {
+    background: #e94560;
+  }
+
+  /* ── Modal ── */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #00000099;
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 10px;
+    padding: 24px;
+    width: 90%;
+    max-width: 680px;
+    max-height: 85vh;
+    overflow-y: auto;
+    position: relative;
+  }
+  .modal-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #e94560;
+    margin-bottom: 16px;
+  }
+  .modal-close {
+    position: absolute;
+    top: 16px; right: 16px;
+    background: none;
+    border: none;
+    color: #a8dadc;
+    font-size: 1.4rem;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .modal-close:hover { color: #e94560; }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 8px 16px;
+    font-size: 0.83rem;
+  }
+  .detail-label { color: #a8dadc; font-weight: 600; }
+  .detail-value { color: #e0e0e0; font-family: monospace; word-break: break-word; }
+
+  .modal-footer { margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; }
+
+  .dest-input {
+    width: 100%;
+    background: #1a1a2e;
+    border: 1px solid #0f346080;
+    color: #e0e0e0;
+    font-family: monospace;
+    font-size: 0.9rem;
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin-top: 10px;
+  }
+  .dest-input:focus { outline: 2px solid #e94560; border-color: transparent; }
+
+  .preview-list { list-style: none; }
+  .preview-list li {
+    padding: 8px 12px;
+    border-bottom: 1px solid #0f346044;
+    font-family: monospace;
+    font-size: 0.78rem;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .preview-list li:last-child { border-bottom: none; }
+  .arrow { color: #e94560; flex-shrink: 0; }
+  .move-src { color: #f0f0c0; }
+  .move-dst { color: #a8dadc; }
+
+  textarea.script-out {
+    width: 100%;
+    height: 360px;
+    background: #0d1117;
+    color: #79c0ff;
+    font-family: 'Courier New', monospace;
+    font-size: 0.76rem;
+    border: 1px solid #0f3460;
+    border-radius: 6px;
+    padding: 12px;
+    resize: vertical;
+  }
+
+  /* ── Filter Bar ── */
+  .filter-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .search-input {
+    background: #16213e;
+    border: 1px solid #0f346080;
+    color: #e0e0e0;
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 0.83rem;
+    width: 240px;
+  }
+  .search-input:focus { outline: 2px solid #e94560; border-color: transparent; }
+  .filter-select {
+    background: #16213e;
+    border: 1px solid #0f346080;
+    color: #e0e0e0;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 0.83rem;
+    cursor: pointer;
+  }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: #2d6a4f;
+    color: #d8f3dc;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 200;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+
+  input[type="checkbox"] {
+    accent-color: #e94560;
+    width: 15px; height: 15px;
+    cursor: pointer;
+  }
+
+  /* ── Console Panel ── */
+  .console-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: #0d1117;
+    border-top: 2px solid #e94560;
+    display: flex;
+    flex-direction: column;
+    z-index: 50;
+    transition: transform 0.3s ease;
+  }
+
+  .console-panel.hidden {
+    transform: translateY(100%);
+    pointer-events: none;
+  }
+
+  .console-header {
+    padding: 10px 15px;
+    background: #16213e;
+    color: #a8dadc;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    border-bottom: 1px solid #0f3460;
+  }
+
+  .console-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .console-close {
+    background: none;
+    border: none;
+    color: #a8dadc;
+    cursor: pointer;
+    font-size: 1.2rem;
+    line-height: 1;
+  }
+
+  .console-close:hover {
+    color: #e94560;
+  }
+
+  .console-output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 15px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #e0e0e0;
+    background: #0d1117;
+  }
+
+  .console-output p {
+    margin: 4px 0;
+    line-height: 1.4;
+  }
+
+  .log-info { color: #a8dadc; }
+  .log-success { color: #2d6a4f; }
+  .log-error { color: #e94560; }
+  .log-warning { color: #f0c040; }
+  .log-debug { color: #666; }
+
+  .main-content {
+    margin-bottom: 0;
+  }
+
+  .main-content.with-console {
+    margin-bottom: 50%;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     HEADER
+══════════════════════════════════════════════════════════════════════════════ -->
+<header>
+  <h1>Comic File Organizer <span>— v2.0 Consolidation Planner</span></h1>
+</header>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     FOLDER PICKER
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="folder-picker-section">
+  <div class="folder-picker">
+    <label>📥 Source Folder (Left Panel)</label>
+    <div class="folder-picker-input">
+      <div class="folder-path" id="left-folder-path" title="/home/nesha/Downloads/comics_download">/home/nesha/Downloads/comics_download</div>
+      <button class="folder-browse-btn" onclick="browseLeftFolder()">Browse</button>
+    </div>
+  </div>
+
+  <div class="folder-picker">
+    <label>📦 Destination Folder (Right Panel)</label>
+    <div class="folder-picker-input">
+      <div class="folder-path" id="right-folder-path" title="/mnt/extramedia/Comics">/mnt/extramedia/Comics</div>
+      <button class="folder-browse-btn" onclick="browseRightFolder()">Browse</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     CONTROL BUTTONS
+══════════════════════════════════════════════════════════════════════════════ -->
+<div style="background: #0f3460; padding: 12px 24px; border-bottom: 1px solid #0f346080; display: flex; gap: 10px; flex-wrap: wrap;">
+  <button class="btn btn-primary" onclick="scanFolders()" id="scan-btn">🔍 Scan Folders</button>
+  <button class="btn btn-secondary" onclick="dryRun()" id="dryrun-btn" disabled>📋 Dry Run...</button>
+  <button class="btn btn-success" onclick="consolidate()" id="consolidate-btn" disabled>✨ Consolidate!</button>
+  <button class="btn btn-outline" onclick="reloadCSV()" id="reload-btn">♻️ Reload CSV</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MAIN CONTENT
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="main-content" id="main-content">
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       STATS BAR
+  ══════════════════════════════════════════════════════════════════════════════ -->
+  <div class="stats-bar">
+    <div class="stat">
+      <span class="stat-num" id="stat-consolidate">54</span>
+      <span class="stat-label">Consolidations</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num" id="stat-newfolder">12</span>
+      <span class="stat-label">New Folders</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num" id="stat-files">72</span>
+      <span class="stat-label">Source Files</span>
+    </div>
+    <div class="stat">
+      <span class="stat-num" id="stat-selected">0</span>
+      <span class="stat-label">Selected</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       CONSOLIDATIONS SECTION
+  ══════════════════════════════════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">Consolidations</span>
+      <span class="badge" id="badge-consolidate">54</span>
+      <span style="font-size:0.75rem;color:#b0b0c0;margin-left:4px;">Files with existing matches</span>
+    </div>
+
+    <div class="filter-bar">
+      <input class="search-input" type="text" id="search-consolidate" placeholder="Search series or file…" oninput="filterTable('consolidate')">
+      <select class="filter-select" id="filter-folder" onchange="filterTable('consolidate')">
+        <option value="">All (Has Folder)</option>
+        <option value="YES">Has Existing Folder</option>
+        <option value="NO">No Existing Folder</option>
+      </select>
+      <select class="filter-select" id="filter-move-source" onchange="filterTable('consolidate')">
+        <option value="">All (Move Source)</option>
+        <option value="LEFT">LEFT only</option>
+        <option value="LEFT + RIGHT_FILES">LEFT + RIGHT_FILES</option>
+      </select>
+      <button class="btn btn-sm btn-outline" onclick="selectAll('consolidate')">Select All</button>
+      <button class="btn btn-sm btn-outline" onclick="deselectAll('consolidate')">Deselect All</button>
+    </div>
+
+    <div class="table-wrap">
+      <table id="tbl-consolidate">
+        <thead>
+          <tr>
+            <th style="width:36px;"><input type="checkbox" id="chk-all-consolidate" onchange="toggleAllInSection('consolidate', this.checked)"><div class="resize-handle"></div></th>
+            <th style="width:220px;">Left Panel File<div class="resize-handle"></div></th>
+            <th style="width:140px;">Series Name<div class="resize-handle"></div></th>
+            <th style="width:160px;">Destination Folder<div class="resize-handle"></div></th>
+            <th style="width:40px;" title="Right Panel Matches">#<div class="resize-handle"></div></th>
+            <th style="width:100px;">Has Folder<div class="resize-handle"></div></th>
+            <th style="width:100px;">Has Files<div class="resize-handle"></div></th>
+            <th style="width:320px;">Strategy<div class="resize-handle"></div></th>
+            <th style="width:180px;">Actions<div class="resize-handle"></div></th>
+          </tr>
+        </thead>
+        <tbody id="body-consolidate"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       NEW FOLDERS SECTION
+  ══════════════════════════════════════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-title">New Folders / Unmatched</span>
+      <span class="badge badge-green" id="badge-newfolder">13</span>
+      <span style="font-size:0.75rem;color:#b0b0c0;margin-left:4px;">No existing folder found</span>
+    </div>
+
+    <div class="filter-bar">
+      <input class="search-input" type="text" id="search-newfolder" placeholder="Search series or file…" oninput="filterTable('newfolder')">
+      <button class="btn btn-sm btn-outline" onclick="selectAll('newfolder')">Select All</button>
+      <button class="btn btn-sm btn-outline" onclick="deselectAll('newfolder')">Deselect All</button>
+    </div>
+
+    <div class="table-wrap">
+      <table id="tbl-newfolder">
+        <thead>
+          <tr>
+            <th style="width:36px;"><input type="checkbox" id="chk-all-newfolder" onchange="toggleAllInSection('newfolder', this.checked)"><div class="resize-handle"></div></th>
+            <th style="width:220px;">Left Panel File<div class="resize-handle"></div></th>
+            <th style="width:140px;">Series Name<div class="resize-handle"></div></th>
+            <th style="width:160px;">New Folder<div class="resize-handle"></div></th>
+            <th style="width:320px;">Strategy<div class="resize-handle"></div></th>
+            <th style="width:180px;">Actions<div class="resize-handle"></div></th>
+          </tr>
+        </thead>
+        <tbody id="body-newfolder"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     CONSOLE PANEL (Bottom)
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="console-panel hidden" id="console-panel">
+  <div class="console-header">
+    <span class="console-title">📋 Console Output</span>
+    <button class="console-close" onclick="closeConsole()">✕</button>
+  </div>
+  <div class="console-output" id="console-output">
+    <!-- Logs appear here -->
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MODALS
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-details">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-details')">&times;</button>
+    <div class="modal-title" id="details-title">File Details</div>
+    <div class="detail-grid" id="details-grid"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-details')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-dest">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-dest')">&times;</button>
+    <div class="modal-title">Change Destination Folder</div>
+    <div style="font-size:0.83rem;color:#b0b0c0;" id="dest-file-label"></div>
+    <input class="dest-input" type="text" id="dest-input" placeholder="/New Folder Name/">
+    <div style="font-size:0.75rem;color:#b0b0c0;margin-top:8px;">
+      Tip: Use format <code style="color:#a8dadc">/Series Name/</code>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-dest')">Cancel</button>
+      <button class="btn btn-primary"   onclick="saveDestination()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-preview">
+  <div class="modal" style="max-width:760px;">
+    <button class="modal-close" onclick="closeModal('modal-preview')">&times;</button>
+    <div class="modal-title">Preview Moves</div>
+    <div style="font-size:0.8rem;color:#b0b0c0;margin-bottom:12px;" id="preview-subtitle"></div>
+    <ul class="preview-list" id="preview-list"></ul>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-preview')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════════════════════════════ -->
+<script>
+// ── Config ──
+const CONFIG = {
+  SRC_DIR: "/home/nesha/Downloads/comics_download/",
+  DEST_DIR: "/mnt/extramedia/Comics/",
+};
+
+const data = [];
+let _editId = null;
+
+// ── Console Functions ──
+function showConsole() {
+  const panel = document.getElementById('console-panel');
+  const output = document.getElementById('console-output');
+  panel.classList.remove('hidden');
+  document.getElementById('main-content').classList.add('with-console');
+  output.innerHTML = '';
+}
+
+function closeConsole() {
+  document.getElementById('console-panel').classList.add('hidden');
+  document.getElementById('main-content').classList.remove('with-console');
+}
+
+function addLog(message, type = 'info') {
+  const output = document.getElementById('console-output');
+  const p = document.createElement('p');
+  p.className = `log-${type}`;
+  p.textContent = message;
+  output.appendChild(p);
+  output.scrollTop = output.scrollHeight;
+}
+
+// ── Folder Picker Functions ──
+function browseLeftFolder() {
+  // This would require server support for native file picker
+  // For now, show placeholder
+  alert('Folder picker requires server integration.\nCurrently set to: /home/nesha/Downloads/comics_download/');
+}
+
+function browseRightFolder() {
+  alert('Folder picker requires server integration.\nCurrently set to: /mnt/extramedia/Comics/');
+}
+
+// ── Main Action Functions ──
+async function scanFolders() {
+  closeConsole();
+  showConsole();
+  addLog('🔍 Scanning folders...');
+  addLog(`Source: ${CONFIG.SRC_DIR}`);
+  addLog(`Destination: ${CONFIG.DEST_DIR}`);
+
+  try {
+    // Step 1: Regenerate CSV by scanning folders
+    addLog('⏳ Regenerating CSV from folders...');
+    const scanResponse = await fetch('/api/scan', { method: 'POST' });
+    if (!scanResponse.ok) throw new Error(`Server error: ${scanResponse.status}`);
+
+    const reader = scanResponse.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const lines = decoder.decode(value).split('\n');
+      lines.forEach(line => {
+        if (line.trim()) addLog(line);
+      });
+    }
+
+    // Step 2: Load the freshly generated CSV
+    addLog('⏳ Loading CSV from server...');
+    const csvResponse = await fetch('/api/csv');
+    if (!csvResponse.ok) throw new Error(`Server error: ${csvResponse.status}`);
+
+    const csvData = await csvResponse.json();
+    addLog(`✅ Loaded ${csvData.length} rows from analysis`);
+
+    // Update data array
+    data.splice(0, data.length, ...csvData.map((r, i) => ({
+      ...r,
+      id: i,
+      destOverride: null,
+      matches: parseInt(r["Right Panel Matches (Count)"]) || 0,
+      hasFolder: r["Has Existing Folder"],
+      hasFiles: r["Has Existing Files"],
+      leftFile: r["Left Panel File"],
+      series: r["Series Name"],
+      action: r["Action Type"],
+      folder: r["Suggested Folder Name"],
+      strategy: r["Consolidation Strategy"],
+      moveSource: r["Move Source"],
+    })));
+
+    addLog(`📊 Data ready: ${data.length} files`);
+    renderAll();
+
+    // Enable next buttons
+    document.getElementById('dryrun-btn').disabled = false;
+    document.getElementById('consolidate-btn').disabled = false;
+
+    addLog('✅ Scan complete');
+  } catch (e) {
+    addLog(`❌ Error: ${e.message}`, 'error');
+  }
+}
+
+async function dryRun() {
+  showConsole();
+  addLog('📋 Starting dry-run analysis...');
+
+  try {
+    const response = await fetch('/api/dry-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const lines = decoder.decode(value).split('\n');
+      lines.forEach(line => {
+        if (line.trim()) addLog(line);
+      });
+    }
+
+    addLog('✅ Dry-run complete');
+  } catch (e) {
+    addLog(`❌ Error: ${e.message}`, 'error');
+  }
+}
+
+async function consolidate() {
+  const confirm_msg = 'This will move files. Are you sure?';
+  if (!window.confirm(confirm_msg)) {
+    addLog('⏭️ Consolidation cancelled');
+    return;
+  }
+
+  showConsole();
+  addLog('▶️ Starting file consolidation...');
+
+  try {
+    const response = await fetch('/api/consolidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const lines = decoder.decode(value).split('\n');
+      lines.forEach(line => {
+        if (line.trim()) {
+          if (line.includes('✅') || line.includes('SUCCESS')) {
+            addLog(line, 'success');
+          } else if (line.includes('❌') || line.includes('ERROR')) {
+            addLog(line, 'error');
+          } else {
+            addLog(line);
+          }
+        }
+      });
+    }
+
+    addLog('✅ Consolidation complete');
+  } catch (e) {
+    addLog(`❌ Error: ${e.message}`, 'error');
+  }
+}
+
+// ── Table Functions ──
+function getRows(section) {
+  return section === 'consolidate'
+    ? data.filter(r => r.action === 'CONSOLIDATE')
+    : data.filter(r => r.action === 'CREATE_FOLDER_WITH_FILES' || r.action === 'COPY_TO_BASE');
+}
+
+function effectiveFolder(row) {
+  return row.destOverride !== null ? row.destOverride : row.folder;
+}
+
+function renderConsolidate(rows) {
+  const tbody = document.getElementById('body-consolidate');
+  tbody.innerHTML = '';
+  rows.forEach(row => {
+    const hasFolderPill = row.hasFolder === 'YES'
+      ? '<span class="pill pill-yes">YES</span>'
+      : '<span class="pill pill-no">NO</span>';
+    const hasFilesPill = row.hasFiles !== 'NO'
+      ? '<span class="pill pill-yes">' + row.hasFiles + '</span>'
+      : '<span class="pill pill-no">NO</span>';
+    const tr = document.createElement('tr');
+    tr.id = 'row-' + row.id;
+    tr.innerHTML = `
+      <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
+      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div></td>
+      <td>${row.series}</td>
+      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
+      <td class="match-count">${row.matches}</td>
+      <td>${hasFolderPill}</td>
+      <td>${hasFilesPill}</td>
+      <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
+      <td><div class="actions-cell">
+        <button class="btn btn-sm btn-outline" onclick="openDetails(${row.id})">Details</button>
+        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit</button>
+      </div></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderNewfolder(rows) {
+  const tbody = document.getElementById('body-newfolder');
+  tbody.innerHTML = '';
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.id = 'row-' + row.id;
+    tr.innerHTML = `
+      <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
+      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div></td>
+      <td>${row.series}</td>
+      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
+      <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
+      <td><div class="actions-cell">
+        <button class="btn btn-sm btn-outline" onclick="openDetails(${row.id})">Details</button>
+        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit</button>
+      </div></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderAll() {
+  const consolidateRows = getRows('consolidate');
+  const newfolderRows = getRows('newfolder');
+
+  renderConsolidate(consolidateRows);
+  renderNewfolder(newfolderRows);
+
+  document.getElementById('badge-consolidate').textContent = consolidateRows.length;
+  document.getElementById('badge-newfolder').textContent = newfolderRows.length;
+  document.getElementById('stat-consolidate').textContent = consolidateRows.length;
+  document.getElementById('stat-newfolder').textContent = newfolderRows.length;
+  document.getElementById('stat-files').textContent = data.length;
+
+  updateSelected();
+}
+
+function filterTable(section) {
+  let rows = getRows(section);
+
+  if (section === 'consolidate') {
+    const q = document.getElementById('search-consolidate').value.toLowerCase();
+    const folder = document.getElementById('filter-folder').value;
+    const msrc = document.getElementById('filter-move-source').value;
+    if (q) rows = rows.filter(r => r.leftFile.toLowerCase().includes(q) || r.series.toLowerCase().includes(q));
+    if (folder) rows = rows.filter(r => r.hasFolder === folder);
+    if (msrc) rows = rows.filter(r => r.moveSource.startsWith(msrc));
+    renderConsolidate(rows);
+    document.getElementById('badge-consolidate').textContent = rows.length;
+  } else {
+    const q = document.getElementById('search-newfolder').value.toLowerCase();
+    if (q) rows = rows.filter(r => r.leftFile.toLowerCase().includes(q) || r.series.toLowerCase().includes(q));
+    renderNewfolder(rows);
+    document.getElementById('badge-newfolder').textContent = rows.length;
+  }
+}
+
+function updateSelected() {
+  const all = document.querySelectorAll('.row-chk:checked');
+  document.getElementById('stat-selected').textContent = all.length;
+}
+
+function selectAll(section) {
+  const rows = getRows(section);
+  rows.forEach(r => {
+    const chk = document.querySelector(`.row-chk[data-id="${r.id}"]`);
+    if (chk) chk.checked = true;
+  });
+  updateSelected();
+}
+
+function deselectAll(section) {
+  const rows = getRows(section);
+  rows.forEach(r => {
+    const chk = document.querySelector(`.row-chk[data-id="${r.id}"]`);
+    if (chk) chk.checked = false;
+  });
+  updateSelected();
+}
+
+function toggleAllInSection(section, checked) {
+  const rows = getRows(section);
+  rows.forEach(r => {
+    const chk = document.querySelector(`.row-chk[data-id="${r.id}"]`);
+    if (chk) chk.checked = checked;
+  });
+  updateSelected();
+}
+
+// ── Modal Functions ──
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.querySelectorAll('.modal-backdrop').forEach(m =>
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); })
+);
+
+function openDetails(id) {
+  const row = data.find(r => r.id === id);
+  document.getElementById('details-title').textContent = row.series;
+  const g = document.getElementById('details-grid');
+  const fields = [
+    ['Left Panel File', row.leftFile],
+    ['Series Name', row.series],
+    ['Action Type', row.action],
+    ['Destination', effectiveFolder(row)],
+    ['Matches', row.matches],
+    ['Has Existing Folder', row.hasFolder],
+    ['Has Existing Files', row.hasFiles],
+    ['Consolidation Strategy', row.strategy],
+    ['Move Source', row.moveSource],
+  ];
+  g.innerHTML = fields.map(([l, v]) =>
+    `<div class="detail-label">${l}</div><div class="detail-value">${v}</div>`
+  ).join('');
+  openModal('modal-details');
+}
+
+function openEditDest(id) {
+  _editId = id;
+  const row = data.find(r => r.id === id);
+  document.getElementById('dest-file-label').textContent = row.leftFile;
+  document.getElementById('dest-input').value = effectiveFolder(row);
+  openModal('modal-dest');
+}
+
+function saveDestination() {
+  const row = data.find(r => r.id === _editId);
+  const val = document.getElementById('dest-input').value.trim();
+  row.destOverride = val || null;
+  closeModal('modal-dest');
+  renderAll();
+  toast('Destination updated.');
+}
+
+async function reloadCSV() {
+  try {
+    const response = await fetch('/api/csv');
+    if (response.ok) {
+      const csvData = await response.json();
+      data.splice(0, data.length, ...csvData.map((r, i) => ({
+        ...r,
+        id: i,
+        destOverride: null,
+        matches: parseInt(r["Right Panel Matches (Count)"]) || 0,
+        hasFolder: r["Has Existing Folder"],
+        hasFiles: r["Has Existing Files"],
+        leftFile: r["Left Panel File"],
+        series: r["Series Name"],
+        action: r["Action Type"],
+        folder: r["Suggested Folder Name"],
+        strategy: r["Consolidation Strategy"],
+        moveSource: r["Move Source"],
+      })));
+      renderAll();
+      toast(`✅ CSV reloaded: ${csvData.length} rows`);
+    }
+  } catch (e) {
+    toast(`❌ Error loading CSV: ${e.message}`);
+  }
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+// ── Column Resizing ──
+function initializeColumnResizing(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+
+  const headers = table.querySelectorAll("th");
+  let resizingColumn = null;
+  let startX = 0;
+  let startWidth = 0;
+
+  const saved = localStorage.getItem(`table-widths-${tableId}`);
+  if (saved) {
+    try {
+      const widths = JSON.parse(saved);
+      headers.forEach((h, i) => {
+        if (widths[i]) h.style.width = widths[i] + "px";
+      });
+    } catch (e) {}
+  }
+
+  headers.forEach((header, index) => {
+    const handle = header.querySelector(".resize-handle");
+    if (!handle) return;
+
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      resizingColumn = header;
+      startX = e.clientX;
+      startWidth = header.offsetWidth;
+      handle.classList.add("active");
+
+      const onMouseMove = (e) => {
+        if (!resizingColumn) return;
+        const diff = e.clientX - startX;
+        const newWidth = Math.max(50, startWidth + diff);
+        resizingColumn.style.width = newWidth + "px";
+      };
+
+      const onMouseUp = () => {
+        if (resizingColumn) {
+          const handle = resizingColumn.querySelector(".resize-handle");
+          if (handle) handle.classList.remove("active");
+          const widths = Array.from(headers).map((h) => h.offsetWidth);
+          localStorage.setItem(`table-widths-${tableId}`, JSON.stringify(widths));
+        }
+        resizingColumn = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+
+    handle.addEventListener("dblclick", () => {
+      const defaults = {
+        "tbl-consolidate": [36, 220, 140, 160, 40, 100, 100, 320, 180],
+        "tbl-newfolder": [36, 220, 140, 160, 320, 180],
+      };
+      const defaultWidths = defaults[tableId] || [];
+      headers.forEach((h, i) => {
+        if (defaultWidths[i]) h.style.width = defaultWidths[i] + "px";
+      });
+      localStorage.removeItem(`table-widths-${tableId}`);
+      toast("Column widths reset");
+    });
+  });
+}
+
+// ── Init ──
+async function initApp() {
+  console.log("🚀 Comic Organizer v2.0 initialized");
+  try {
+    const response = await fetch('/api/csv');
+    if (response.ok) {
+      const csvData = await response.json();
+      data.splice(0, data.length, ...csvData.map((r, i) => ({
+        ...r,
+        id: i,
+        destOverride: null,
+        matches: parseInt(r["Right Panel Matches (Count)"]) || 0,
+        hasFolder: r["Has Existing Folder"],
+        hasFiles: r["Has Existing Files"],
+        leftFile: r["Left Panel File"],
+        series: r["Series Name"],
+        action: r["Action Type"],
+        folder: r["Suggested Folder Name"],
+        strategy: r["Consolidation Strategy"],
+        moveSource: r["Move Source"],
+      })));
+
+      renderAll();
+      document.getElementById('dryrun-btn').disabled = false;
+      document.getElementById('consolidate-btn').disabled = false;
+    }
+  } catch (e) {
+    console.warn("Could not load CSV:", e);
+  }
+
+  initializeColumnResizing("tbl-consolidate");
+  initializeColumnResizing("tbl-newfolder");
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
+</script>
+</body>
+</html>
