@@ -115,6 +115,7 @@
   .btn-primary   { background: #e94560; color: #fff; }
   .btn-secondary { background: #0f3460; color: #a8dadc; border: 1px solid #a8dadc44; }
   .btn-success   { background: #2d6a4f; color: #d8f3dc; }
+  .btn-warning   { background: #7a4f00; color: #ffd166; border: 1px solid #ffd16644; }
   .btn-sm        { padding: 4px 10px; font-size: 0.75rem; }
   .btn-outline   { background: transparent; color: #a8dadc; border: 1px solid #a8dadc55; }
   .btn-outline:hover { background: #a8dadc22; }
@@ -701,15 +702,38 @@
 <div class="modal-backdrop" id="modal-dest">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('modal-dest')">&times;</button>
-    <div class="modal-title">Change Destination Folder</div>
-    <div style="font-size:0.83rem;color:#b0b0c0;" id="dest-file-label"></div>
-    <input class="dest-input" type="text" id="dest-input" placeholder="/New Folder Name/">
+    <div class="modal-title">Edit Destination Folder</div>
+    <div style="font-size:0.83rem;color:#b0b0c0;margin-bottom:6px;" id="dest-file-label"></div>
+    <div style="font-size:0.78rem;color:#b0b0c0;margin-bottom:8px;">
+      Current series: <span id="dest-series-label" style="color:#a8dadc;"></span>
+    </div>
+    <input class="dest-input" type="text" id="dest-input" placeholder="Destination folder name">
     <div style="font-size:0.75rem;color:#b0b0c0;margin-top:8px;">
-      Tip: Use format <code style="color:#a8dadc">/Series Name/</code>
+      Override the destination folder for this file only.
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-dest')">Cancel</button>
       <button class="btn btn-primary"   onclick="saveDestination()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-series">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-series')">&times;</button>
+    <div class="modal-title">Edit Series Name</div>
+    <div style="font-size:0.83rem;color:#b0b0c0;margin-bottom:6px;" id="series-file-label"></div>
+    <div style="font-size:0.78rem;color:#b0b0c0;margin-bottom:8px;">
+      Current series name:
+    </div>
+    <input class="dest-input" type="text" id="series-input" placeholder="Corrected series name">
+    <div style="font-size:0.75rem;color:#b0b0c0;margin-top:8px;">
+      Correcting the series name will <strong style="color:#a8dadc;">rescan matching</strong> for this file
+      and suggest a new destination folder.
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-series')">Cancel</button>
+      <button class="btn btn-primary"   onclick="saveSeriesName()">Save &amp; Rescan</button>
     </div>
   </div>
 </div>
@@ -815,6 +839,7 @@ async function scanFolders() {
       ...r,
       id: i,
       destOverride: null,
+      seriesOverride: undefined,
       matches: parseInt(r["Right Panel Matches (Count)"]) || 0,
       hasFolder: r["Has Existing Folder"],
       hasFiles: r["Has Existing Files"],
@@ -843,10 +868,16 @@ async function dryRun() {
   showConsole();
   addLog('📋 Starting dry-run analysis...');
 
+  const overrides = buildOverrides();
+  if (overrides.length > 0) {
+    addLog(`✏️  Applying ${overrides.length} user override(s)...`);
+  }
+
   try {
     const response = await fetch('/api/dry-run', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overrides }),
     });
 
     if (!response.ok) throw new Error(`Server error: ${response.status}`);
@@ -880,10 +911,16 @@ async function consolidate() {
   showConsole();
   addLog('▶️ Starting file consolidation...');
 
+  const overrides = buildOverrides();
+  if (overrides.length > 0) {
+    addLog(`✏️  Applying ${overrides.length} user override(s)...`);
+  }
+
   try {
     const response = await fetch('/api/consolidate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overrides }),
     });
 
     if (!response.ok) throw new Error(`Server error: ${response.status}`);
@@ -960,7 +997,7 @@ function renderFolders(rows) {
       <td>${actionLabel}</td>
       <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
       <td><div class="actions-cell">
-        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit</button>
+        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit dest.folder</button>
       </div></td>`;
     tbody.appendChild(tr);
 
@@ -1021,7 +1058,8 @@ function renderConsolidate(rows) {
       <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
       <td><div class="actions-cell">
         <button class="btn btn-sm btn-outline" onclick="openDetails(${row.id})">Details</button>
-        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit</button>
+        <button class="btn btn-sm btn-warning" onclick="openEditSeries(${row.id})">Edit series name</button>
+        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit dest.folder</button>
       </div></td>`;
     tbody.appendChild(tr);
   });
@@ -1041,7 +1079,8 @@ function renderNewfolder(rows) {
       <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
       <td><div class="actions-cell">
         <button class="btn btn-sm btn-outline" onclick="openDetails(${row.id})">Details</button>
-        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit</button>
+        <button class="btn btn-sm btn-warning" onclick="openEditSeries(${row.id})">Edit series name</button>
+        <button class="btn btn-sm btn-secondary" onclick="openEditDest(${row.id})">Edit dest.folder</button>
       </div></td>`;
     tbody.appendChild(tr);
   });
@@ -1147,10 +1186,22 @@ function openDetails(id) {
   openModal('modal-details');
 }
 
+function buildOverrides() {
+  // Collect all rows that have any user overrides applied
+  return data
+    .filter(r => r.seriesOverride !== undefined || r.destOverride !== null)
+    .map(r => ({
+      left_file: r.leftFile,
+      series_name: r.seriesOverride !== undefined ? r.seriesOverride : r.series,
+      dest_folder: r.destOverride !== null ? r.destOverride : effectiveFolder(r),
+    }));
+}
+
 function openEditDest(id) {
   _editId = id;
   const row = data.find(r => r.id === id);
   document.getElementById('dest-file-label').textContent = row.leftFile;
+  document.getElementById('dest-series-label').textContent = row.seriesOverride || row.series;
   document.getElementById('dest-input').value = effectiveFolder(row);
   openModal('modal-dest');
 }
@@ -1161,7 +1212,61 @@ function saveDestination() {
   row.destOverride = val || null;
   closeModal('modal-dest');
   renderAll();
-  toast('Destination updated.');
+  toast('Destination folder updated. Will be applied on Dry Run / Consolidate.');
+}
+
+function openEditSeries(id) {
+  _editId = id;
+  const row = data.find(r => r.id === id);
+  document.getElementById('series-file-label').textContent = row.leftFile;
+  document.getElementById('series-input').value = row.seriesOverride || row.series;
+  openModal('modal-series');
+}
+
+async function saveSeriesName() {
+  const row = data.find(r => r.id === _editId);
+  const newSeries = document.getElementById('series-input').value.trim();
+
+  if (!newSeries || newSeries === (row.seriesOverride || row.series)) {
+    closeModal('modal-series');
+    return;
+  }
+
+  closeModal('modal-series');
+  addLog(`✏️  Rescanning "${row.leftFile}" with series name: "${newSeries}"...`);
+  showConsole();
+
+  try {
+    const response = await fetch('/api/rescan-series', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ left_file: row.leftFile, new_series: newSeries }),
+    });
+
+    if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+    const updated = await response.json();
+
+    // Apply updates to the row
+    row.seriesOverride = newSeries;
+    row.series = newSeries;
+    row.action = updated["Action Type"];
+    row.folder = updated["Suggested Folder Name"];
+    row.strategy = updated["Consolidation Strategy"];
+    row.matches = parseInt(updated["Right Panel Matches (Count)"]) || 0;
+    row.hasFolder = updated["Has Existing Folder"];
+    row.hasFiles = updated["Has Existing Files"];
+    row.moveSource = updated["Move Source"];
+    // Clear dest override since series changed — new folder suggestion may differ
+    row.destOverride = null;
+
+    renderAll();
+    addLog(`✅ Rescanned: series="${newSeries}", action=${updated["Action Type"]}, dest=${updated["Suggested Folder Name"]}`);
+    toast(`Series updated. New action: ${updated["Action Type"]}`);
+
+  } catch (e) {
+    addLog(`❌ Rescan failed: ${e.message}`, 'error');
+  }
 }
 
 async function reloadCSV() {

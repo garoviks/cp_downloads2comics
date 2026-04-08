@@ -417,6 +417,8 @@ Examples:
                         help="Rollback last execution")
     parser.add_argument("--no-confirm", action="store_true",
                         help="Skip confirmation prompt (use with caution)")
+    parser.add_argument("--overrides", type=str, default=None,
+                        help="Path to JSON file with user overrides [{left_file, series_name, dest_folder}]")
 
     args = parser.parse_args()
 
@@ -437,6 +439,28 @@ Examples:
     print(f"📖 Reading CSV: {CSV_FILE}")
     rows = read_csv()
     print(f"✅ Loaded {len(rows)} rows\n")
+
+    # Apply user overrides if provided
+    if args.overrides:
+        try:
+            with open(args.overrides, 'r') as f:
+                overrides = json.load(f)
+            override_map = {o["left_file"]: o for o in overrides if "left_file" in o}
+            if override_map:
+                print(f"✏️  Applying {len(override_map)} user override(s):")
+                for row in rows:
+                    key = row.get("Left Panel File", "").strip()
+                    if key in override_map:
+                        o = override_map[key]
+                        if "series_name" in o and o["series_name"]:
+                            print(f"   Series: \"{row['Series Name']}\" → \"{o['series_name']}\"")
+                            row["Series Name"] = o["series_name"]
+                        if "dest_folder" in o and o["dest_folder"]:
+                            print(f"   Dest:   \"{row['Suggested Folder Name']}\" → \"{o['dest_folder']}\"")
+                            row["Suggested Folder Name"] = o["dest_folder"]
+                print()
+        except Exception as e:
+            print(f"⚠️  Could not load overrides: {e}\n")
 
     print("📐 Planning moves...")
     operations = plan_moves(rows)

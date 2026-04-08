@@ -11,6 +11,8 @@ import csv
 import json
 import subprocess
 import sys
+import tempfile
+import os
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -62,6 +64,10 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
 
         if path == "/api/consolidate":
             self.handle_consolidate()
+            return
+
+        if path == "/api/rescan-series":
+            self.handle_rescan_series()
             return
 
         self.send_error(404)
@@ -144,18 +150,45 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             self.wfile.write(f"ERROR: {str(e)}".encode())
 
+    def read_post_json(self):
+        """Read JSON body from POST request. Returns dict or {}."""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            if length > 0:
+                return json.loads(self.rfile.read(length))
+        except Exception:
+            pass
+        return {}
+
+    def write_overrides_file(self, overrides: list) -> str:
+        """Write overrides list to a temp JSON file. Returns file path."""
+        tf = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json', delete=False, dir='/tmp'
+        )
+        json.dump(overrides, tf)
+        tf.close()
+        return tf.name
+
     def handle_dry_run(self):
-        """Handle dry-run request with streaming output."""
+        """Handle dry-run request with streaming output. Accepts overrides in POST body."""
+        body = self.read_post_json()
+        overrides = body.get("overrides", [])
+
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
+        overrides_file = None
         try:
-            # Run comic_mover.py --dry-run and stream output
+            cmd = ["python3", "comic_mover.py", "--dry-run"]
+            if overrides:
+                overrides_file = self.write_overrides_file(overrides)
+                cmd += ["--overrides", overrides_file]
+
             process = subprocess.Popen(
-                ["python3", "comic_mover.py", "--dry-run"],
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -170,19 +203,30 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
             process.wait()
         except Exception as e:
             self.wfile.write(f"ERROR: {str(e)}".encode())
+        finally:
+            if overrides_file and os.path.exists(overrides_file):
+                os.unlink(overrides_file)
 
     def handle_consolidate(self):
-        """Handle consolidate request with streaming output."""
+        """Handle consolidate request with streaming output. Accepts overrides in POST body."""
+        body = self.read_post_json()
+        overrides = body.get("overrides", [])
+
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
+        overrides_file = None
         try:
-            # Run comic_mover.py --execute and stream output
+            cmd = ["python3", "comic_mover.py", "--execute", "--no-confirm"]
+            if overrides:
+                overrides_file = self.write_overrides_file(overrides)
+                cmd += ["--overrides", overrides_file]
+
             process = subprocess.Popen(
-                ["python3", "comic_mover.py", "--execute", "--no-confirm"],
+                cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -197,6 +241,75 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
             process.wait()
         except Exception as e:
             self.wfile.write(f"ERROR: {str(e)}".encode())
+        finally:
+            if overrides_file and os.path.exists(overrides_file):
+                os.unlink(overrides_file)
+
+    def handle_rescan_series(self):
+        """Rescan matching logic for a single file with an overridden series name.
+        Uses a subprocess to avoid blocking and to get a fresh import."""
+        body = self.read_post_json()
+        left_file = body.get("left_file", "").strip()
+        new_series = body.get("new_series", "").strip()
+
+        if not left_file or not new_series:
+            self.send_error(400, "Missing left_file or new_series")
+            return
+
+        try:
+            # Run a small Python script that does the rescan and outputs JSON
+            script = f"""
+import sys, json
+sys.path.insert(0, '/home/nesha/scripts/cp_downloads2comics/')
+import matching_analysis_generator as mag
+
+dest_map = mag.scan_destination_directory()
+matched, match_data, confidence = mag.find_matches(
+    {json.dumps(left_file)}, {json.dumps(new_series)}, dest_map
+)
+row = mag.generate_consolidation_strategy(
+    {json.dumps(left_file)}, {json.dumps(new_series)}, matched, match_data, confidence
+)
+result = {{
+    "Series Name": {json.dumps(new_series)},
+    "Action Type": row["Action Type"],
+    "Suggested Folder Name": row["Suggested Folder Name"],
+    "Right Panel Matches (Count)": row["Right Panel Matches (Count)"],
+    "Has Existing Folder": row["Has Existing Folder"],
+    "Has Existing Files": row["Has Existing Files"],
+    "Consolidation Strategy": row["Consolidation Strategy"],
+    "Move Source": row["Move Source"],
+}}
+print("RESCAN_JSON:" + json.dumps(result))
+"""
+            process = subprocess.Popen(
+                ["python3", "-c", script],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            stdout, stderr = process.communicate(timeout=120)
+
+            # Extract JSON from output (after RESCAN_JSON: marker)
+            result_json = None
+            for line in stdout.split("\n"):
+                if line.startswith("RESCAN_JSON:"):
+                    result_json = line[len("RESCAN_JSON:"):]
+                    break
+
+            if result_json is None:
+                raise Exception(f"No result from rescan subprocess. stderr: {stderr}")
+
+            json_data = result_json.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(json_data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json_data)
+
+        except Exception as e:
+            self.send_error(500, f"Error rescanning: {str(e)}")
 
     def log_message(self, format, *args):
         """Override log format to be cleaner."""
