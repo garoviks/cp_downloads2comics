@@ -504,16 +504,19 @@ def find_publisher_match(filename: str, dest_map: Dict) -> Optional[Tuple[str, D
 def find_exact_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dict]]:
     """
     Rule 3a: Find exact series name match in destination (case-insensitive).
-    Only returns a match if the dest entry has an actual named folder.
-    (Files that happen to share a series name but live in a different folder
-    are not counted — fuzzy matching will find their parent folder instead.)
+    Returns a match if dest entry has a folder OR loose files in base dir.
+    Does NOT count files_in_folders alone — those belong to a different series'
+    folder and fuzzy matching will find the correct parent folder instead.
     Returns: (matched_series_name, match_data) or None
     """
     src_lower = src_series.lower()
     for dest_series, dest_data in dest_map.items():
         if dest_series.lower() == src_lower:
-            # Only count as a real match if a dedicated folder exists
-            if dest_data.get("folders"):
+            has_folder = bool(dest_data.get("folders"))
+            has_loose = bool(dest_data.get("loose_files"))
+            # Match if there's a folder OR loose files in base dir
+            # (files_in_folders alone means they live inside a different folder)
+            if has_folder or has_loose:
                 return (dest_series, dest_data)
     return None
 
