@@ -355,6 +355,7 @@ def scan_source_directory() -> Dict[str, List[str]]:
     Returns: {series_name: [file1, file2, ...]}
     """
     series_map = defaultdict(list)
+    series_canonical = {}  # lowercase → first-seen original casing
 
     if not SRC_DIR.exists():
         print(f"❌ Source directory not found: {SRC_DIR}")
@@ -384,12 +385,18 @@ def scan_source_directory() -> Dict[str, List[str]]:
             print(f"   ⚠️  [{i + 1}] WARNING: Cannot extract series from {filename}")
             continue
 
+        # Group case-insensitively, preserve first-seen casing
+        series_lower = series.lower()
+        if series_lower not in series_canonical:
+            series_canonical[series_lower] = series
+        canonical = series_canonical[series_lower]
+
         # Store relative path from source directory so files can be found later
         relative_path = str(file_path.relative_to(SRC_DIR))
-        series_map[series].append(relative_path)
+        series_map[canonical].append(relative_path)
 
         if (i + 1) % 10 == 0:
-            print(f"   [{i + 1}] Processed {filename} → {series}")
+            print(f"   [{i + 1}] Processed {filename} → {canonical}")
 
     print(f"\n✅ Source scan complete: {len(series_map)} unique series\n")
     return dict(series_map)
