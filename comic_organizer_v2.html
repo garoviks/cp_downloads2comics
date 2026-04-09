@@ -707,7 +707,29 @@
     <div style="font-size:0.78rem;color:#b0b0c0;margin-bottom:8px;">
       Current series: <span id="dest-series-label" style="color:#a8dadc;"></span>
     </div>
-    <input class="dest-input" type="text" id="dest-input" placeholder="Destination folder name">
+
+    <!-- Tab selector -->
+    <div style="display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid #404050;padding-bottom:8px;">
+      <button class="tab-btn active" data-tab="dest-browse" onclick="switchDestTab('browse')" style="background:none;border:none;color:#a8dadc;cursor:pointer;padding:0;font-size:0.9rem;">📁 Browse</button>
+      <button class="tab-btn" data-tab="dest-text" onclick="switchDestTab('text')" style="background:none;border:none;color:#606070;cursor:pointer;padding:0;font-size:0.9rem;">✏️ Enter Path</button>
+    </div>
+
+    <!-- Browse tab -->
+    <div id="dest-browse" style="display:block;">
+      <div style="margin-bottom:8px;">
+        <label for="dest-folder-input" style="display:block;font-size:0.85rem;color:#b0b0c0;margin-bottom:6px;">Select a folder:</label>
+        <input type="file" id="dest-folder-input" webkitdirectory mozdirectory msdirectory="true" style="width:100%;padding:6px;background:#202030;border:1px solid #404050;color:#d0d0d0;border-radius:4px;font-size:0.85rem;" onchange="handleDestFolderSelect(event)">
+      </div>
+      <div style="font-size:0.75rem;color:#808090;background:#1a1a28;padding:6px;border-radius:3px;margin-bottom:8px;">
+        Selected: <span id="dest-folder-display" style="color:#a8dadc;">none</span>
+      </div>
+    </div>
+
+    <!-- Text input tab -->
+    <div id="dest-text" style="display:none;">
+      <input class="dest-input" type="text" id="dest-input" placeholder="Enter folder path or name (e.g., My Series or /path/to/folder)">
+    </div>
+
     <div style="font-size:0.75rem;color:#b0b0c0;margin-top:8px;">
       Override the destination folder for this file only.
     </div>
@@ -797,6 +819,53 @@ function browseLeftFolder() {
 
 function browseRightFolder() {
   alert('Folder picker requires server integration.\nCurrently set to: /mnt/extramedia/Comics/');
+}
+
+// ── Destination Modal Tab Switching ──
+function switchDestTab(tab) {
+  const browseTab = document.getElementById('dest-browse');
+  const textTab = document.getElementById('dest-text');
+  const browseBtnElement = document.querySelector('[data-tab="dest-browse"]');
+  const textBtnElement = document.querySelector('[data-tab="dest-text"]');
+
+  if (tab === 'browse') {
+    browseTab.style.display = 'block';
+    textTab.style.display = 'none';
+    browseBtnElement.classList.add('active');
+    browseBtnElement.style.color = '#a8dadc';
+    textBtnElement.classList.remove('active');
+    textBtnElement.style.color = '#606070';
+  } else {
+    browseTab.style.display = 'none';
+    textTab.style.display = 'block';
+    browseBtnElement.classList.remove('active');
+    browseBtnElement.style.color = '#606070';
+    textBtnElement.classList.add('active');
+    textBtnElement.style.color = '#a8dadc';
+  }
+}
+
+// ── Folder Selection Handler ──
+function handleDestFolderSelect(event) {
+  const files = Array.from(event.target.files || []);
+  if (files.length === 0) {
+    document.getElementById('dest-folder-display').textContent = 'none';
+    document.getElementById('dest-input').value = '';
+    return;
+  }
+
+  // Extract folder path from first file
+  // File.webkitRelativePath gives us the path like "FolderName/file.txt"
+  const relativePath = files[0].webkitRelativePath;
+  if (!relativePath) {
+    document.getElementById('dest-folder-display').textContent = 'none';
+    return;
+  }
+
+  // Get just the folder name (first part before /)
+  const folderName = relativePath.split('/')[0];
+  document.getElementById('dest-folder-display').textContent = folderName;
+  document.getElementById('dest-input').value = folderName;
 }
 
 // ── Main Action Functions ──
@@ -1203,6 +1272,12 @@ function openEditDest(id) {
   document.getElementById('dest-file-label').textContent = row.leftFile;
   document.getElementById('dest-series-label').textContent = row.seriesOverride || row.series;
   document.getElementById('dest-input').value = effectiveFolder(row);
+  document.getElementById('dest-folder-display').textContent = 'none';
+  document.getElementById('dest-folder-input').value = '';
+
+  // Reset to Browse tab
+  switchDestTab('browse');
+
   openModal('modal-dest');
 }
 

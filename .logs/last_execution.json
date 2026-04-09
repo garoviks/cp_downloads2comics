@@ -1,14 +1,64 @@
 {
-  "timestamp": "2026-04-08T07:45:33.654631",
+  "timestamp": "2026-04-10T10:02:14.681763",
   "operations": [
     {
-      "series": "The Shadower",
-      "dest_folder": "/",
-      "action_type": "COPY_TO_BASE",
+      "series": "Dick Tracy",
+      "dest_folder": "/Dick Tracy/",
+      "action_type": "CONSOLIDATE",
       "moves": [
         {
-          "src": "/home/nesha/Downloads/comics_download/The Shadower (2026) (Graphic Novel) (Top Shelf) (Digital) (LeDuch).cbz",
-          "dst": "/mnt/extramedia/Comics/The Shadower (2026) (Graphic Novel) (Top Shelf) (Digital) (LeDuch).cbz",
+          "src": "/home/nesha/Downloads/comics_download/Dick Tracy 016 (2026) (Digital) (Pyrate-DCP).cbz",
+          "dst": "/mnt/extramedia/Comics/Dick Tracy/Dick Tracy 016 (2026) (Digital) (Pyrate-DCP).cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        },
+        {
+          "src": "/mnt/extramedia/Comics/Dick Tracy 013 (2025) (2 covers) (digital) (Son of Ultron-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Dick Tracy/Dick Tracy 013 (2025) (2 covers) (digital) (Son of Ultron-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        },
+        {
+          "src": "/mnt/extramedia/Comics/Dick Tracy St. Patrick's Day Special (2026) (2 covers) (digital) (Son of Ultron-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Dick Tracy/Dick Tracy St. Patrick's Day Special (2026) (2 covers) (digital) (Son of Ultron-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        },
+        {
+          "src": "/mnt/extramedia/Comics/Dick Tracy 014 (2025) (2 covers) (digital) (Son of Ultron-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Dick Tracy/Dick Tracy 014 (2025) (2 covers) (digital) (Son of Ultron-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        },
+        {
+          "src": "/mnt/extramedia/Comics/Dick Tracy 015 (2026) (Series) (Mad Cave Studios) (Digital-HD) (LeDuch).cbz",
+          "dst": "/mnt/extramedia/Comics/Dick Tracy/Dick Tracy 015 (2026) (Series) (Mad Cave Studios) (Digital-HD) (LeDuch).cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Punderworld",
+      "dest_folder": "/Punderworld/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Punderworld v02 (2026) (Graphic Novel) (Top Cow) (Digital) (LeDuch).cbz",
+          "dst": "/mnt/extramedia/Comics/Punderworld/Punderworld v02 (2026) (Graphic Novel) (Top Cow) (Digital) (LeDuch).cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        },
+        {
+          "src": "/mnt/extramedia/Comics/Punderworld v01 (2021) (digital) (The Magicians-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Punderworld/Punderworld v01 (2021) (digital) (The Magicians-Empire).cbr",
           "type": "FILE",
           "executed": true,
           "error": null
