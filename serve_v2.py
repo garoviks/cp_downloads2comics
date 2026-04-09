@@ -313,7 +313,7 @@ print("RESCAN_JSON:" + json.dumps(result))
 
     def log_message(self, format, *args):
         """Override log format to be cleaner."""
-        if "GET" in args[0] or "POST" in args[0]:
+        if isinstance(args[0], str) and ("GET" in args[0] or "POST" in args[0]):
             print(f"  {self.address_string()} - {args[0]}")
 
 
