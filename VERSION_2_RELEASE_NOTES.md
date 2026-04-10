@@ -1,6 +1,36 @@
-# Comic File Organizer v2.0 Release Notes
+# Comic File Organizer — Release Notes
 
-## Overview
+## v2.4 (2026-04-10)
+
+### Multi-Select Bulk Editing
+- **Row checkboxes** across all three table sections (Source Folders, Consolidations, New Folders)
+- Select multiple rows, then click **"Edit series name"** or **"Edit dest.folder"** on any selected row
+- Modal title updates to show scope: *"Edit Destination Folder — will apply to 3 rows"*
+- **"Edit dest.folder"** — applies the same `destOverride` to all selected rows instantly
+- **"Edit series name"** — applies the series name override to all selected rows (no rescan; run Dry Run to refresh matching)
+- Single-row edits (row not in selection) behave as before — series edit still triggers live rescan
+
+### Folder Picker Dialogs
+- Top-level **Browse** buttons for Source Folder and Destination Folder now open real modal dialogs
+- Each dialog has two tabs: **📁 Browse** (native folder picker via `webkitdirectory`) and **✏️ Enter Path** (text input)
+- Selected folder path updates the display and is used by Scan Folders, Dry Run, and Consolidate
+
+### Scan Respects User-Selected Folders
+- **Scan Folders** now sends the currently displayed source/dest paths to the backend
+- `matching_analysis_generator.py` accepts `--src` and `--dest` arguments to override defaults
+
+### Grouping Multiple Files Without Right-Side Matches
+- Multiple loose files from the same series (with no right-side match) now get `CREATE_FOLDER_WITH_FILES` instead of `COPY_TO_BASE`
+- Single unmatched files still use `COPY_TO_BASE`
+
+### Bug Fixes
+- Fixed `log_message` TypeError when server handled 404 errors (favicon.ico etc.)
+
+---
+
+## v2.0 — v2.3 History
+
+### v2.0 — Initial Release
 
 Version 2.0 introduces a complete redesign of the web interface with real-time streaming console output, integrated folder selection, and one-click operations.
 
@@ -271,14 +301,13 @@ Check browser DevTools (F12) → Network tab for errors in API requests.
 
 ---
 
-## Future Enhancements (v2.1+)
+## Future Enhancements
 
-- [ ] Actual folder picker dialog (requires Electron)
 - [ ] Progress percentage indicator
 - [ ] Ability to pause/cancel operations
 - [ ] Detailed move history with timestamps
 - [ ] Export operation logs
-- [ ] Custom log verbosity levels
+- [ ] Series rescan in bulk (currently bulk series edit skips rescan)
 - [ ] Dark/light theme toggle
 
 ---

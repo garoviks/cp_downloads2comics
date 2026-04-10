@@ -51,13 +51,31 @@ SKIP_PATTERNS = {"comics_download.txt", "sha 01", "the bank", "the owl"}
 | `CONSOLIDATE_FOLDER` | Subfolder → existing right folder |
 | `CREATE_FOLDER_FROM_FOLDER` | Subfolder → new folder (+ right loose files) |
 | `CONSOLIDATE` | Loose file → existing right folder |
-| `CREATE_FOLDER_WITH_FILES` | Loose file + right loose files → new folder |
-| `COPY_TO_BASE` | No match → Comics/ base directory |
+| `CREATE_FOLDER_WITH_FILES` | Loose file(s) + right loose files → new folder |
+| `COPY_TO_BASE` | Single unmatched file → Comics/ base directory |
+
+Note: 2+ loose files sharing the same series name always get `CREATE_FOLDER_WITH_FILES` even with no right-side match.
+
+### Destination Override Behaviour
+- User can override `dest_folder` on any row via "Edit dest.folder"
+- `comic_mover.py` always calls `mkdir(parents=True, exist_ok=True)` before moving — so overriding to a non-existent folder name is safe; the folder is created automatically
 
 ## UI Sections
 1. **Source Folders** — folder-level rows, expandable (▶) to show individual files
 2. **Consolidations** — individual file → existing folder
 3. **New Folders / Unmatched** — individual file → new folder or base
+
+## Multi-Select Bulk Editing (v2.4)
+- Check multiple rows, then click **Edit series name** or **Edit dest.folder** on any selected row
+- If the clicked row is among the selection, the change applies to all selected rows
+- Series name bulk edit: applies `seriesOverride` only — no rescan. Run Scan/Dry Run to refresh matching
+- Dest folder bulk edit: applies `destOverride` to all selected rows immediately
+- If the clicked row is NOT in the selection, edit applies to that row only (single-row behaviour)
+
+## Folder Picker (v2.4)
+- Top-level Browse buttons open a modal with two tabs: 📁 Browse (webkitdirectory) and ✏️ Enter Path
+- Selected paths are sent to `/api/scan`, `/api/dry-run`, and `/api/consolidate` in POST JSON body
+- `matching_analysis_generator.py` accepts `--src` and `--dest` CLI args to override hardcoded defaults
 
 ## Model Recommendation
 - **Haiku 4.5** — UI tweaks, simple fixes, documentation
