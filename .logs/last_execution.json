@@ -1,14 +1,276 @@
 {
-  "timestamp": "2026-04-10T12:11:00.946520",
+  "timestamp": "2026-04-10T13:24:16.620973",
   "operations": [
     {
-      "series": "A Bunch of Jews (and other stuff)",
-      "dest_folder": "/",
-      "action_type": "COPY_TO_BASE",
+      "series": "Assassins Apprentice",
+      "dest_folder": "Assassins Apprentice",
+      "action_type": "CREATE_FOLDER_FROM_FOLDER",
       "moves": [
         {
-          "src": "/home/nesha/Downloads/comics_download/A Bunch of Jews (and other stuff) (2017) (Digital-Empire).cbr",
-          "dst": "/mnt/extramedia/Comics/A Bunch of Jews (and other stuff) (2017) (Digital-Empire).cbr",
+          "src": "/home/nesha/Downloads/comics_download/Assassins Apprentice/Assassin's Apprentice v01 (2023) (Digital) (XRA-Empire).cbz",
+          "dst": "/mnt/extramedia/Comics/Assassins Apprentice/Assassin's Apprentice v01 (2023) (Digital) (XRA-Empire).cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        },
+        {
+          "src": "/home/nesha/Downloads/comics_download/Assassins Apprentice/Assassin's Apprentice v02 (2024) (digital) (Li'l Ultron-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Assassins Apprentice/Assassin's Apprentice v02 (2024) (digital) (Li'l Ultron-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Artificial",
+      "dest_folder": "/Artificial/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Artificial 001 (2025) (Digital) (DR & Quinch-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Artificial/Artificial 001 (2025) (Digital) (DR & Quinch-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Artificial",
+      "dest_folder": "/Artificial/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Artificial 002 (2025) (Digital) (DR & Quinch-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Artificial/Artificial 002 (2025) (Digital) (DR & Quinch-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Artificial",
+      "dest_folder": "/Artificial/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Artificial 003 (2025) (Digital) (DR & Quinch-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Artificial/Artificial 003 (2025) (Digital) (DR & Quinch-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Artificial",
+      "dest_folder": "/Artificial/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Artificial 004 (2025) (Digital) (DR & Quinch-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Artificial/Artificial 004 (2025) (Digital) (DR & Quinch-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Assassin's Apprentice",
+      "dest_folder": "/Assassin's Apprentice/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Assassin's Apprentice v03 (2025) (Digital) (XRA-Empire).cbz",
+          "dst": "/mnt/extramedia/Comics/Assassin's Apprentice/Assassin's Apprentice v03 (2025) (Digital) (XRA-Empire).cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Assassin's Apprentice",
+      "dest_folder": "/Assassin's Apprentice/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Assassins Apprentice/Assassin's Apprentice v01 (2023) (Digital) (XRA-Empire).cbz",
+          "dst": "/mnt/extramedia/Comics/Assassin's Apprentice/Assassin's Apprentice v01 (2023) (Digital) (XRA-Empire).cbz",
+          "type": "FILE",
+          "executed": false,
+          "error": "Error moving /home/nesha/Downloads/comics_download/Assassins Apprentice/Assassin's Apprentice v01 (2023) (Digital) (XRA-Empire).cbz: Source not found: /home/nesha/Downloads/comics_download/Assassins Apprentice/Assassin's Apprentice v01 (2023) (Digital) (XRA-Empire).cbz"
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Assassin's Apprentice",
+      "dest_folder": "/Assassin's Apprentice/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Assassins Apprentice/Assassin's Apprentice v02 (2024) (digital) (Li'l Ultron-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Assassin's Apprentice/Assassin's Apprentice v02 (2024) (digital) (Li'l Ultron-Empire).cbr",
+          "type": "FILE",
+          "executed": false,
+          "error": "Error moving /home/nesha/Downloads/comics_download/Assassins Apprentice/Assassin's Apprentice v02 (2024) (digital) (Li'l Ultron-Empire).cbr: Source not found: /home/nesha/Downloads/comics_download/Assassins Apprentice/Assassin's Apprentice v02 (2024) (digital) (Li'l Ultron-Empire).cbr"
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Backtrack",
+      "dest_folder": "/Backtrack/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Backtrack v01.cbz",
+          "dst": "/mnt/extramedia/Comics/Backtrack/Backtrack v01.cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Backtrack",
+      "dest_folder": "/Backtrack/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Backtrack v02.cbz",
+          "dst": "/mnt/extramedia/Comics/Backtrack/Backtrack v02.cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Barbarian Behind Bars",
+      "dest_folder": "/Barbarian Behind Bars/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Barbarian Behind Bars 001 (2026) (Limited Series) (Mad Cave Studios) (Digital-HD) (LeDuch).cbz",
+          "dst": "/mnt/extramedia/Comics/Barbarian Behind Bars/Barbarian Behind Bars 001 (2026) (Limited Series) (Mad Cave Studios) (Digital-HD) (LeDuch).cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Barbarian Behind Bars",
+      "dest_folder": "/Barbarian Behind Bars/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Barbarian Behind Bars 002 (2026) (digital) (Knight Ripper-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Barbarian Behind Bars/Barbarian Behind Bars 002 (2026) (digital) (Knight Ripper-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Barcelona at Dawn",
+      "dest_folder": "/Barcelona at Dawn/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Barcelona at Dawn (2019) (SAF Comics) (Digital-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Barcelona at Dawn/Barcelona at Dawn (2019) (SAF Comics) (Digital-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Bastien Vives",
+      "dest_folder": "/Bastien Vives/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Bastien Vives - The Blouse v01 (2022) (Digital) (phillywilly-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/Bastien Vives/Bastien Vives - The Blouse v01 (2022) (Digital) (phillywilly-Empire).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Bastien Vives",
+      "dest_folder": "/Bastien Vives/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Bastien Vives - To my Eyes (Dragonz-Kakanian).cbr",
+          "dst": "/mnt/extramedia/Comics/Bastien Vives/Bastien Vives - To my Eyes (Dragonz-Kakanian).cbr",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Battle Action",
+      "dest_folder": "/Battle Action/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Battle Action v01 (2022) (digital) (Torquemada).cbz",
+          "dst": "/mnt/extramedia/Comics/Battle Action/Battle Action v01 (2022) (digital) (Torquemada).cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Battle Action",
+      "dest_folder": "/Battle Action/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Battle Action v02 (2024) (digital) (Torquemada).cbz",
+          "dst": "/mnt/extramedia/Comics/Battle Action/Battle Action v02 (2024) (digital) (Torquemada).cbz",
+          "type": "FILE",
+          "executed": true,
+          "error": null
+        }
+      ],
+      "skipped": null
+    },
+    {
+      "series": "Battle Action",
+      "dest_folder": "/Battle Action/",
+      "action_type": "CREATE_FOLDER_WITH_FILES",
+      "moves": [
+        {
+          "src": "/home/nesha/Downloads/comics_download/Battle Action v03 (2025) (digital) (Torquemada).cbz",
+          "dst": "/mnt/extramedia/Comics/Battle Action/Battle Action v03 (2025) (digital) (Torquemada).cbz",
           "type": "FILE",
           "executed": true,
           "error": null

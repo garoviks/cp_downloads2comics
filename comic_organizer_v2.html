@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Comic File Organizer v2.0</title>
+<title>Comic File Organizer v2.4</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -502,7 +502,7 @@
      HEADER
 ══════════════════════════════════════════════════════════════════════════════ -->
 <header>
-  <h1>Comic File Organizer <span>— v2.0 Consolidation Planner</span></h1>
+  <h1>Comic File Organizer <span>— v2.4 Consolidation Planner</span></h1>
 </header>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -1416,6 +1416,11 @@ function updateSelected() {
   document.getElementById('stat-selected').textContent = all.length;
 }
 
+function getSelectedIds() {
+  return Array.from(document.querySelectorAll('.row-chk:checked'))
+    .map(chk => parseInt(chk.dataset.id));
+}
+
 function selectAll(section) {
   const rows = getRows(section);
   rows.forEach(r => {
@@ -1492,6 +1497,14 @@ function openEditDest(id) {
   document.getElementById('dest-folder-display').textContent = 'none';
   document.getElementById('dest-folder-input').value = '';
 
+  // Update modal title to reflect multi-select scope
+  const selectedIds = getSelectedIds();
+  const applyCount = selectedIds.includes(id) ? selectedIds.length : 1;
+  const titleEl = document.querySelector('#modal-dest .modal-title');
+  titleEl.textContent = applyCount > 1
+    ? `Edit Destination Folder — will apply to ${applyCount} rows`
+    : 'Edit Destination Folder';
+
   // Reset to Browse tab
   switchDestTab('browse');
 
@@ -1499,12 +1512,26 @@ function openEditDest(id) {
 }
 
 function saveDestination() {
-  const row = data.find(r => r.id === _editId);
   const val = document.getElementById('dest-input').value.trim();
-  row.destOverride = val || null;
+  const selectedIds = getSelectedIds();
+  const editedRow = data.find(r => r.id === _editId);
+
+  // Apply to all selected rows if edited row is among selection; else just the one row
+  const targetIds = selectedIds.includes(_editId) && selectedIds.length > 1
+    ? selectedIds
+    : [_editId];
+
+  targetIds.forEach(tid => {
+    const r = data.find(row => row.id === tid);
+    if (r) r.destOverride = val || null;
+  });
+
   closeModal('modal-dest');
   renderAll();
-  toast('Destination folder updated. Will be applied on Dry Run / Consolidate.');
+  const msg = targetIds.length > 1
+    ? `Destination folder applied to ${targetIds.length} rows.`
+    : 'Destination folder updated. Will be applied on Dry Run / Consolidate.';
+  toast(msg);
 }
 
 function openEditSeries(id) {
@@ -1512,52 +1539,89 @@ function openEditSeries(id) {
   const row = data.find(r => r.id === id);
   document.getElementById('series-file-label').textContent = row.leftFile;
   document.getElementById('series-input').value = row.seriesOverride || row.series;
+
+  // Update modal title to reflect multi-select scope
+  const selectedIds = getSelectedIds();
+  const applyCount = selectedIds.includes(id) ? selectedIds.length : 1;
+  const titleEl = document.querySelector('#modal-series .modal-title');
+  if (applyCount > 1) {
+    titleEl.textContent = `Edit Series Name — will apply to ${applyCount} rows`;
+  } else {
+    titleEl.textContent = 'Edit Series Name';
+  }
+
   openModal('modal-series');
 }
 
 async function saveSeriesName() {
-  const row = data.find(r => r.id === _editId);
+  const editedRow = data.find(r => r.id === _editId);
   const newSeries = document.getElementById('series-input').value.trim();
 
-  if (!newSeries || newSeries === (row.seriesOverride || row.series)) {
+  if (!newSeries) {
+    closeModal('modal-series');
+    return;
+  }
+
+  const selectedIds = getSelectedIds();
+  const isBulk = selectedIds.includes(_editId) && selectedIds.length > 1;
+  const targetIds = isBulk ? selectedIds : [_editId];
+
+  // Unchanged single-row: close without action
+  if (!isBulk && newSeries === (editedRow.seriesOverride || editedRow.series)) {
     closeModal('modal-series');
     return;
   }
 
   closeModal('modal-series');
-  addLog(`✏️  Rescanning "${row.leftFile}" with series name: "${newSeries}"...`);
-  showConsole();
 
-  try {
-    const response = await fetch('/api/rescan-series', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ left_file: row.leftFile, new_series: newSeries }),
+  if (isBulk) {
+    // Option B: apply series override to all selected rows, no rescan
+    targetIds.forEach(tid => {
+      const r = data.find(row => row.id === tid);
+      if (r) {
+        r.seriesOverride = newSeries;
+        r.series = newSeries;
+        // Clear dest override since series changed
+        r.destOverride = null;
+      }
     });
-
-    if (!response.ok) throw new Error(`Server error: ${response.status}`);
-
-    const updated = await response.json();
-
-    // Apply updates to the row
-    row.seriesOverride = newSeries;
-    row.series = newSeries;
-    row.action = updated["Action Type"];
-    row.folder = updated["Suggested Folder Name"];
-    row.strategy = updated["Consolidation Strategy"];
-    row.matches = parseInt(updated["Right Panel Matches (Count)"]) || 0;
-    row.hasFolder = updated["Has Existing Folder"];
-    row.hasFiles = updated["Has Existing Files"];
-    row.moveSource = updated["Move Source"];
-    // Clear dest override since series changed — new folder suggestion may differ
-    row.destOverride = null;
-
     renderAll();
-    addLog(`✅ Rescanned: series="${newSeries}", action=${updated["Action Type"]}, dest=${updated["Suggested Folder Name"]}`);
-    toast(`Series updated. New action: ${updated["Action Type"]}`);
+    toast(`Series name "${newSeries}" applied to ${targetIds.length} rows. Run Scan or Dry Run to refresh matching.`);
+  } else {
+    // Single row: rescan as before
+    const row = editedRow;
+    addLog(`✏️  Rescanning "${row.leftFile}" with series name: "${newSeries}"...`);
+    showConsole();
 
-  } catch (e) {
-    addLog(`❌ Rescan failed: ${e.message}`, 'error');
+    try {
+      const response = await fetch('/api/rescan-series', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ left_file: row.leftFile, new_series: newSeries }),
+      });
+
+      if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+      const updated = await response.json();
+
+      row.seriesOverride = newSeries;
+      row.series = newSeries;
+      row.action = updated["Action Type"];
+      row.folder = updated["Suggested Folder Name"];
+      row.strategy = updated["Consolidation Strategy"];
+      row.matches = parseInt(updated["Right Panel Matches (Count)"]) || 0;
+      row.hasFolder = updated["Has Existing Folder"];
+      row.hasFiles = updated["Has Existing Files"];
+      row.moveSource = updated["Move Source"];
+      row.destOverride = null;
+
+      renderAll();
+      addLog(`✅ Rescanned: series="${newSeries}", action=${updated["Action Type"]}, dest=${updated["Suggested Folder Name"]}`);
+      toast(`Series updated. New action: ${updated["Action Type"]}`);
+
+    } catch (e) {
+      addLog(`❌ Rescan failed: ${e.message}`, 'error');
+    }
   }
 }
 
@@ -1666,7 +1730,7 @@ function initializeColumnResizing(tableId) {
 
 // ── Init ──
 async function initApp() {
-  console.log("🚀 Comic Organizer v2.0 initialized");
+  console.log("🚀 Comic Organizer v2.4 initialized");
   try {
     const response = await fetch('/api/csv');
     if (response.ok) {
