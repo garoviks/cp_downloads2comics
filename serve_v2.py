@@ -121,6 +121,10 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
 
     def handle_scan(self):
         """Handle scan request - regenerate CSV from folders."""
+        body = self.read_post_json()
+        src_dir = body.get("src_dir", "/home/nesha/Downloads/comics_download/").strip()
+        dest_dir = body.get("dest_dir", "/mnt/extramedia/Comics").strip()
+
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -128,9 +132,9 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         self.end_headers()
 
         try:
-            # Run matching_analysis_generator.py to regenerate CSV
+            # Run matching_analysis_generator.py with custom folders
             process = subprocess.Popen(
-                ["python3", "matching_analysis_generator.py"],
+                ["python3", "matching_analysis_generator.py", "--src", src_dir, "--dest", dest_dir],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

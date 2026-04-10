@@ -1080,14 +1080,23 @@ function handleDestFolderSelect(event) {
 async function scanFolders() {
   closeConsole();
   showConsole();
+
+  // Read current folder paths from UI
+  const srcDir = document.getElementById('left-folder-path').textContent.trim();
+  const destDir = document.getElementById('right-folder-path').textContent.trim();
+
   addLog('🔍 Scanning folders...');
-  addLog(`Source: ${CONFIG.SRC_DIR}`);
-  addLog(`Destination: ${CONFIG.DEST_DIR}`);
+  addLog(`Source: ${srcDir}`);
+  addLog(`Destination: ${destDir}`);
 
   try {
     // Step 1: Regenerate CSV by scanning folders
     addLog('⏳ Regenerating CSV from folders...');
-    const scanResponse = await fetch('/api/scan', { method: 'POST' });
+    const scanResponse = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ src_dir: srcDir, dest_dir: destDir })
+    });
     if (!scanResponse.ok) throw new Error(`Server error: ${scanResponse.status}`);
 
     const reader = scanResponse.body.getReader();

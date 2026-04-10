@@ -6,10 +6,15 @@ Reads source and destination directories, extracts series names,
 performs exact/fuzzy matching, and generates consolidation strategies.
 
 Output: matching_analysis_consolidated.csv
+
+Usage:
+    python3 matching_analysis_generator.py [--src SOURCE_DIR] [--dest DEST_DIR]
 """
 
 import csv
 import re
+import sys
+import argparse
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, List, Tuple, Optional
@@ -726,6 +731,23 @@ def generate_consolidation_strategy(
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
+    global SRC_DIR, DEST_DIR, OUTPUT_FILE
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Comic File Organizer — Matching Analysis Generator")
+    parser.add_argument("--src", type=str, help="Source directory (default: /home/nesha/Downloads/comics_download/)")
+    parser.add_argument("--dest", type=str, help="Destination directory (default: /mnt/extramedia/Comics)")
+    args = parser.parse_args()
+
+    # Update SRC_DIR and DEST_DIR if provided
+    if args.src:
+        SRC_DIR = Path(args.src)
+    if args.dest:
+        DEST_DIR = Path(args.dest)
+
+    # Update OUTPUT_FILE to use current SRC_DIR
+    OUTPUT_FILE = SRC_DIR / "matching_analysis_consolidated.csv"
+
     print("\n" + "=" * 80)
     print("🎬 Comic File Organizer — Matching Analysis Generator")
     print("=" * 80 + "\n")
