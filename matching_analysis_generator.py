@@ -621,6 +621,7 @@ def generate_consolidation_strategy(
     matched_series: Optional[str],
     match_data: Optional[Dict],
     confidence: str,
+    remaining_files_count: int = 0,
 ) -> Dict:
     """
     Generate consolidation strategy row data.
@@ -706,11 +707,18 @@ def generate_consolidation_strategy(
             "Confidence": confidence,
         }
 
-    # Case 3: RIGHT has NOTHING — copy to base folder
-    consolidation_strategy = "Copy left file to base Comics folder (no matching series found)"
-    move_source = "LEFT"
-    action_type = "COPY_TO_BASE"
-    dest_folder = "/"
+    # Case 3: RIGHT has NOTHING
+    # If there are multiple files from this series (2 or more total), create a folder to group them
+    if remaining_files_count >= 1:
+        consolidation_strategy = f"Create /{src_series}/ folder and move {remaining_files_count + 1} left files into it"
+        move_source = "LEFT"
+        action_type = "CREATE_FOLDER_WITH_FILES"
+        dest_folder = f"/{src_series}/"
+    else:
+        consolidation_strategy = "Copy left file to base Comics folder (no matching series found)"
+        move_source = "LEFT"
+        action_type = "COPY_TO_BASE"
+        dest_folder = "/"
 
     return {
         "Left Panel File": src_filename,
@@ -870,12 +878,15 @@ def main():
             if src_filename in processed_files:
                 continue
 
+            # Count remaining files from this series (excluding current file and already processed)
+            remaining_count = len([f for f in src_files if f != src_filename and f not in processed_files])
+
             # Find matches (pass filename for rule 1 & 2 checks)
             matched_series, match_data, confidence = find_matches(src_filename, src_series, dest_map)
 
             # Generate strategy
             row = generate_consolidation_strategy(
-                src_filename, src_series, matched_series, match_data, confidence
+                src_filename, src_series, matched_series, match_data, confidence, remaining_count
             )
 
             # Track statistics

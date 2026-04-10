@@ -1,89 +1,14 @@
 {
-  "timestamp": "2026-04-10T12:00:22.295189",
+  "timestamp": "2026-04-10T12:11:00.946520",
   "operations": [
     {
-      "series": "A Girl Walks Home Alone at Night",
-      "dest_folder": "/A Girl Walks Home Alone at Night/",
-      "action_type": "CONSOLIDATE",
-      "moves": [
-        {
-          "src": "/home/nesha/Downloads/comics_download/A Girl Walks Home Alone at Night 001 (2014) (Digital) (DR & Quinch-Empire) newcomic.org.cbr",
-          "dst": "/mnt/extramedia/Comics/A Girl Walks Home Alone at Night/A Girl Walks Home Alone at Night 001 (2014) (Digital) (DR & Quinch-Empire) newcomic.org.cbr",
-          "type": "FILE",
-          "executed": true,
-          "error": null
-        }
-      ],
-      "skipped": null
-    },
-    {
-      "series": "A Girl Walks Home Alone at Night",
-      "dest_folder": "/A Girl Walks Home Alone at Night/",
-      "action_type": "CONSOLIDATE",
-      "moves": [
-        {
-          "src": "/home/nesha/Downloads/comics_download/A Girl Walks Home Alone at Night 002 (2014) (Digital) (DR & Quinch-Empire) newcomic.org.cbr",
-          "dst": "/mnt/extramedia/Comics/A Girl Walks Home Alone at Night/A Girl Walks Home Alone at Night 002 (2014) (Digital) (DR & Quinch-Empire) newcomic.org.cbr",
-          "type": "FILE",
-          "executed": true,
-          "error": null
-        }
-      ],
-      "skipped": null
-    },
-    {
-      "series": "Afterburn - Bad Blood",
+      "series": "A Bunch of Jews (and other stuff)",
       "dest_folder": "/",
       "action_type": "COPY_TO_BASE",
       "moves": [
         {
-          "src": "/home/nesha/Downloads/comics_download/Afterburn - Bad Blood 001 (2025) (Series) (Red 5 Comics) (Digital-HD) (LeDuch).cbz",
-          "dst": "/mnt/extramedia/Comics/Afterburn - Bad Blood 001 (2025) (Series) (Red 5 Comics) (Digital-HD) (LeDuch).cbz",
-          "type": "FILE",
-          "executed": true,
-          "error": null
-        }
-      ],
-      "skipped": null
-    },
-    {
-      "series": "Afterburn - Bad Blood",
-      "dest_folder": "/",
-      "action_type": "COPY_TO_BASE",
-      "moves": [
-        {
-          "src": "/home/nesha/Downloads/comics_download/Afterburn - Bad Blood 002 (of 004) (2025) (Limited Series) (Red 5 Comics) (Digital-HD) (LeDuch).cbz",
-          "dst": "/mnt/extramedia/Comics/Afterburn - Bad Blood 002 (of 004) (2025) (Limited Series) (Red 5 Comics) (Digital-HD) (LeDuch).cbz",
-          "type": "FILE",
-          "executed": true,
-          "error": null
-        }
-      ],
-      "skipped": null
-    },
-    {
-      "series": "Afterburn - Bad Blood",
-      "dest_folder": "/",
-      "action_type": "COPY_TO_BASE",
-      "moves": [
-        {
-          "src": "/home/nesha/Downloads/comics_download/Afterburn - Bad Blood 003 (of 004) (2025) (Limited Series) (Red 5 Comics) (Digital-HD) (LeDuch).cbz",
-          "dst": "/mnt/extramedia/Comics/Afterburn - Bad Blood 003 (of 004) (2025) (Limited Series) (Red 5 Comics) (Digital-HD) (LeDuch).cbz",
-          "type": "FILE",
-          "executed": true,
-          "error": null
-        }
-      ],
-      "skipped": null
-    },
-    {
-      "series": "Afterburn - Bad Blood",
-      "dest_folder": "/",
-      "action_type": "COPY_TO_BASE",
-      "moves": [
-        {
-          "src": "/home/nesha/Downloads/comics_download/Afterburn - Bad Blood 004 (of 004) (2025) (Limited Series) (Red 5 Comics) (Digital-HD) (LeDuch).cbz",
-          "dst": "/mnt/extramedia/Comics/Afterburn - Bad Blood 004 (of 004) (2025) (Limited Series) (Red 5 Comics) (Digital-HD) (LeDuch).cbz",
+          "src": "/home/nesha/Downloads/comics_download/A Bunch of Jews (and other stuff) (2017) (Digital-Empire).cbr",
+          "dst": "/mnt/extramedia/Comics/A Bunch of Jews (and other stuff) (2017) (Digital-Empire).cbr",
           "type": "FILE",
           "executed": true,
           "error": null
