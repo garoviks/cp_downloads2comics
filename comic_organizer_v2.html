@@ -760,6 +760,82 @@
   </div>
 </div>
 
+<!-- Left Folder Selection Modal -->
+<div class="modal-backdrop" id="modal-left-folder">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-left-folder')">&times;</button>
+    <div class="modal-title">Select Source Folder</div>
+    <div style="font-size:0.78rem;color:#b0b0c0;margin-bottom:12px;">
+      Source folder (Left Panel) - where comics are downloaded
+    </div>
+
+    <!-- Tab selector -->
+    <div style="display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid #404050;padding-bottom:8px;">
+      <button class="tab-btn active" data-tab="left-browse" onclick="switchLeftTab('browse')" style="background:none;border:none;color:#a8dadc;cursor:pointer;padding:0;font-size:0.9rem;">📁 Browse</button>
+      <button class="tab-btn" data-tab="left-text" onclick="switchLeftTab('text')" style="background:none;border:none;color:#606070;cursor:pointer;padding:0;font-size:0.9rem;">✏️ Enter Path</button>
+    </div>
+
+    <!-- Browse tab -->
+    <div id="left-browse" style="display:block;">
+      <div style="margin-bottom:8px;">
+        <label for="left-folder-input" style="display:block;font-size:0.85rem;color:#b0b0c0;margin-bottom:6px;">Select a folder:</label>
+        <input type="file" id="left-folder-input" webkitdirectory mozdirectory msdirectory="true" style="width:100%;padding:6px;background:#202030;border:1px solid #404050;color:#d0d0d0;border-radius:4px;font-size:0.85rem;" onchange="handleLeftFolderSelect(event)">
+      </div>
+      <div style="font-size:0.75rem;color:#808090;background:#1a1a28;padding:6px;border-radius:3px;margin-bottom:8px;">
+        Selected: <span id="left-folder-display" style="color:#a8dadc;">none</span>
+      </div>
+    </div>
+
+    <!-- Text input tab -->
+    <div id="left-text" style="display:none;">
+      <input class="dest-input" type="text" id="left-input" placeholder="Enter full path to source folder">
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-left-folder')">Cancel</button>
+      <button class="btn btn-primary"   onclick="saveLeftFolder()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Right Folder Selection Modal -->
+<div class="modal-backdrop" id="modal-right-folder">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('modal-right-folder')">&times;</button>
+    <div class="modal-title">Select Destination Folder</div>
+    <div style="font-size:0.78rem;color:#b0b0c0;margin-bottom:12px;">
+      Destination folder (Right Panel) - where comics will be organized
+    </div>
+
+    <!-- Tab selector -->
+    <div style="display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid #404050;padding-bottom:8px;">
+      <button class="tab-btn active" data-tab="right-browse" onclick="switchRightTab('browse')" style="background:none;border:none;color:#a8dadc;cursor:pointer;padding:0;font-size:0.9rem;">📁 Browse</button>
+      <button class="tab-btn" data-tab="right-text" onclick="switchRightTab('text')" style="background:none;border:none;color:#606070;cursor:pointer;padding:0;font-size:0.9rem;">✏️ Enter Path</button>
+    </div>
+
+    <!-- Browse tab -->
+    <div id="right-browse" style="display:block;">
+      <div style="margin-bottom:8px;">
+        <label for="right-folder-input" style="display:block;font-size:0.85rem;color:#b0b0c0;margin-bottom:6px;">Select a folder:</label>
+        <input type="file" id="right-folder-input" webkitdirectory mozdirectory msdirectory="true" style="width:100%;padding:6px;background:#202030;border:1px solid #404050;color:#d0d0d0;border-radius:4px;font-size:0.85rem;" onchange="handleRightFolderSelect(event)">
+      </div>
+      <div style="font-size:0.75rem;color:#808090;background:#1a1a28;padding:6px;border-radius:3px;margin-bottom:8px;">
+        Selected: <span id="right-folder-display" style="color:#a8dadc;">none</span>
+      </div>
+    </div>
+
+    <!-- Text input tab -->
+    <div id="right-text" style="display:none;">
+      <input class="dest-input" type="text" id="right-input" placeholder="Enter full path to destination folder">
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-right-folder')">Cancel</button>
+      <button class="btn btn-primary"   onclick="saveRightFolder()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-preview">
   <div class="modal" style="max-width:760px;">
     <button class="modal-close" onclick="closeModal('modal-preview')">&times;</button>
@@ -812,13 +888,145 @@ function addLog(message, type = 'info') {
 
 // ── Folder Picker Functions ──
 function browseLeftFolder() {
-  // This would require server support for native file picker
-  // For now, show placeholder
-  alert('Folder picker requires server integration.\nCurrently set to: /home/nesha/Downloads/comics_download/');
+  document.getElementById('left-folder-display').textContent = 'none';
+  document.getElementById('left-folder-input').value = '';
+  document.getElementById('left-input').value = document.getElementById('left-folder-path').textContent;
+  switchLeftTab('browse');
+  openModal('modal-left-folder');
 }
 
 function browseRightFolder() {
-  alert('Folder picker requires server integration.\nCurrently set to: /mnt/extramedia/Comics/');
+  document.getElementById('right-folder-display').textContent = 'none';
+  document.getElementById('right-folder-input').value = '';
+  document.getElementById('right-input').value = document.getElementById('right-folder-path').textContent;
+  switchRightTab('browse');
+  openModal('modal-right-folder');
+}
+
+// ── Left Folder Tab Switching ──
+function switchLeftTab(tab) {
+  const browseTab = document.getElementById('left-browse');
+  const textTab = document.getElementById('left-text');
+  const browseBtnElements = document.querySelectorAll('[data-tab="left-browse"]');
+  const textBtnElements = document.querySelectorAll('[data-tab="left-text"]');
+
+  if (tab === 'browse') {
+    browseTab.style.display = 'block';
+    textTab.style.display = 'none';
+    browseBtnElements.forEach(el => {
+      el.classList.add('active');
+      el.style.color = '#a8dadc';
+    });
+    textBtnElements.forEach(el => {
+      el.classList.remove('active');
+      el.style.color = '#606070';
+    });
+  } else {
+    browseTab.style.display = 'none';
+    textTab.style.display = 'block';
+    browseBtnElements.forEach(el => {
+      el.classList.remove('active');
+      el.style.color = '#606070';
+    });
+    textBtnElements.forEach(el => {
+      el.classList.add('active');
+      el.style.color = '#a8dadc';
+    });
+  }
+}
+
+// ── Right Folder Tab Switching ──
+function switchRightTab(tab) {
+  const browseTab = document.getElementById('right-browse');
+  const textTab = document.getElementById('right-text');
+  const browseBtnElements = document.querySelectorAll('[data-tab="right-browse"]');
+  const textBtnElements = document.querySelectorAll('[data-tab="right-text"]');
+
+  if (tab === 'browse') {
+    browseTab.style.display = 'block';
+    textTab.style.display = 'none';
+    browseBtnElements.forEach(el => {
+      el.classList.add('active');
+      el.style.color = '#a8dadc';
+    });
+    textBtnElements.forEach(el => {
+      el.classList.remove('active');
+      el.style.color = '#606070';
+    });
+  } else {
+    browseTab.style.display = 'none';
+    textTab.style.display = 'block';
+    browseBtnElements.forEach(el => {
+      el.classList.remove('active');
+      el.style.color = '#606070';
+    });
+    textBtnElements.forEach(el => {
+      el.classList.add('active');
+      el.style.color = '#a8dadc';
+    });
+  }
+}
+
+// ── Left Folder Selection Handler ──
+function handleLeftFolderSelect(event) {
+  const files = Array.from(event.target.files || []);
+  if (files.length === 0) {
+    document.getElementById('left-folder-display').textContent = 'none';
+    document.getElementById('left-input').value = '';
+    return;
+  }
+
+  // Get the folder path from the first file's webkitRelativePath
+  const relativePath = files[0].webkitRelativePath;
+  if (!relativePath) {
+    document.getElementById('left-folder-display').textContent = 'none';
+    return;
+  }
+
+  const folderName = relativePath.split('/')[0];
+  document.getElementById('left-folder-display').textContent = folderName;
+  document.getElementById('left-input').value = folderName;
+}
+
+// ── Right Folder Selection Handler ──
+function handleRightFolderSelect(event) {
+  const files = Array.from(event.target.files || []);
+  if (files.length === 0) {
+    document.getElementById('right-folder-display').textContent = 'none';
+    document.getElementById('right-input').value = '';
+    return;
+  }
+
+  const relativePath = files[0].webkitRelativePath;
+  if (!relativePath) {
+    document.getElementById('right-folder-display').textContent = 'none';
+    return;
+  }
+
+  const folderName = relativePath.split('/')[0];
+  document.getElementById('right-folder-display').textContent = folderName;
+  document.getElementById('right-input').value = folderName;
+}
+
+// ── Save Folder Functions ──
+function saveLeftFolder() {
+  const folderPath = document.getElementById('left-input').value.trim();
+  if (folderPath) {
+    document.getElementById('left-folder-path').textContent = folderPath;
+    document.getElementById('left-folder-path').title = folderPath;
+    closeModal('modal-left-folder');
+    toast('Source folder updated to: ' + folderPath);
+  }
+}
+
+function saveRightFolder() {
+  const folderPath = document.getElementById('right-input').value.trim();
+  if (folderPath) {
+    document.getElementById('right-folder-path').textContent = folderPath;
+    document.getElementById('right-folder-path').title = folderPath;
+    closeModal('modal-right-folder');
+    toast('Destination folder updated to: ' + folderPath);
+  }
 }
 
 // ── Destination Modal Tab Switching ──
