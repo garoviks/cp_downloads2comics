@@ -34,7 +34,7 @@ ISSUE_PATTERN = re.compile(
     r'\s+#?\d+(?:\s*\(of\s*\d+\))?|\s+\(\d{1,3}\)'
 )
 
-YEAR_PATTERN = re.compile(r'\((\d{4})\)')
+YEAR_PATTERN = re.compile(r'\((\d{4}(?:-\d{4})?)\)')
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CONFIG
@@ -240,43 +240,27 @@ def find_matching_right_folders() -> Dict[str, str]:
 
 def find_folder_match(folder_series: str, right_folders: Dict[str, str]) -> Tuple[Optional[str], str]:
     """
-    Find matching folder on right side with STRICT matching.
+    Find matching folder on right side with STRICT matching (EXACT ONLY).
 
     Matching priority:
-    1. Exact match (after normalization)
-    2. First-word match (first word of series matches first word of folder)
+    1. Exact match (after normalization) ONLY
+    2. NO first-word matching (causes false positives like "Broken Eye" → "Broken Pieces")
     3. NO fuzzy matching for folders (too risky for false positives)
 
     Returns: (matched_folder_name, match_type)
-      match_type: "EXACT", "FIRST_WORD", or None if no match
+      match_type: "EXACT" or None if no match
     """
     if not folder_series or not right_folders:
         return None, None
 
     normalized_series = normalize_name(folder_series)
-    series_words = normalized_series.split()
 
-    if not series_words:
+    if not normalized_series:
         return None, None
 
-    # 1. Try exact match
+    # Only try exact match (safest approach for folders)
     if normalized_series in right_folders:
         return right_folders[normalized_series], "EXACT"
-
-    # 2. Try first-word match (only if first word of series matches start of folder)
-    series_first_word = series_words[0]
-
-    for norm_folder, actual_folder in right_folders.items():
-        folder_words = norm_folder.split()
-
-        # Check if series first word matches any folder word AND
-        # the series first word is at the START of the folder name (not buried in middle)
-        if series_first_word in folder_words:
-            # Get position of match
-            match_index = folder_words.index(series_first_word)
-            # Accept match only if it's in first 2 words (series name usually at start)
-            if match_index <= 1:
-                return actual_folder, "FIRST_WORD"
 
     # No match found
     return None, None
@@ -646,8 +630,11 @@ def generate_consolidation_strategy(
     # Case 1: RIGHT has FOLDER
     if num_folders > 0:
         action_type = "CONSOLIDATE"
-        # Use matched_series (which may be publisher or specific folder) for display
-        display_folder = matched_series if matched_series else src_series
+        # Use actual destination folder name from match_data to preserve year/edition info
+        if match_data and match_data.get("folders"):
+            display_folder = match_data["folders"][0]
+        else:
+            display_folder = matched_series if matched_series else src_series
         dest_folder = f"/{display_folder}/"
 
         # Determine move source (include loose files if present)

@@ -1,4 +1,4 @@
-# Comic File Organizer — Claude Context
+# Comic File Organizer — Claude Context (v2.5)
 
 ## What This Project Does
 Consolidates downloaded comic files from source folder into organized destination library.
@@ -6,6 +6,12 @@ Consolidates downloaded comic files from source folder into organized destinatio
 **Source (left):**  `/home/nesha/Downloads/comics_download/`
 **Destination (right):** `/mnt/extramedia/Comics/` (~47,000 items, ~11,900 unique series)
 **CSV:** `/home/nesha/Downloads/comics_download/matching_analysis_consolidated.csv`
+
+## Recent Updates (v2.5)
+**Three critical matching bugs fixed:**
+1. Year range handling — destination folders with year ranges like (2019-2024) now extract correctly
+2. Consolidation path accuracy — now uses actual folder names instead of extracted keys (preserves year/edition)
+3. Folder matching safety — removed risky FIRST_WORD matching that caused unrelated series to consolidate together
 
 ## How to Run
 ```bash
