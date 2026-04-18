@@ -214,7 +214,7 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
             continue
 
         # Determine destination folder path
-        if action == "COPY_TO_BASE":
+        if action == "COPY_TO_BASE" and dest_folder == "/":
             dest_folder_path = DEST_DIR
         else:
             dest_folder_path = DEST_DIR / dest_folder.strip('/')
