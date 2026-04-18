@@ -359,11 +359,6 @@ def scan_source_directory() -> Dict[str, List[str]]:
     for i, file_path in enumerate(sorted(files)):
         filename = file_path.name
 
-        # Skip certain patterns
-        if any(skip in filename.lower() for skip in SKIP_PATTERNS):
-            print(f"   ⏭️  [{i + 1}] SKIP: {filename}")
-            continue
-
         # Skip directories
         if file_path.is_dir():
             continue
@@ -372,6 +367,11 @@ def scan_source_directory() -> Dict[str, List[str]]:
         series = extract_series_name(filename)
         if not series:
             print(f"   ⚠️  [{i + 1}] WARNING: Cannot extract series from {filename}")
+            continue
+
+        # Skip certain series (match by extracted series name, not filename substring)
+        if any(skip.lower() == series.lower() for skip in SKIP_PATTERNS):
+            print(f"   ⏭️  [{i + 1}] SKIP: {filename} (series: {series})")
             continue
 
         # Group case-insensitively, preserve first-seen casing
