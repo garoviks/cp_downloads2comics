@@ -1,6 +1,6 @@
 # Downloads2Comics — User Guide
 
-**Current version: v2.5**
+**Current version: v2.6**
 
 ---
 
@@ -261,6 +261,10 @@ python3 comic_mover.py --rollback
 
 ## Version History
 
+### v2.6 (2026-05-13)
+- ComicVine metadata integration planned (Phase 2) — series name validation and matching assistance
+- UI version string bumped to v2.6
+
 ### v2.5 (2026-05-13)
 - Fixed year range extraction: `(2019-2024)` now correctly parsed as a range, not two years
 - Fixed consolidation path accuracy: uses actual folder names instead of extracted series keys
@@ -295,7 +299,7 @@ python3 comic_mover.py --rollback
 
 ---
 
-**Version**: v2.5
+**Version**: v2.6
 **Last Updated**: 2026-05-13 14:00
 **Server**: `serve_v2.py` (port 8123)
 **UI**: `comic_organizer_v2.html`

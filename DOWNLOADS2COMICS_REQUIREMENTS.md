@@ -1,6 +1,6 @@
 # Downloads2Comics — Requirements
 
-**Current version: v2.5**
+**Current version: v2.6**
 
 ## Overview
 
@@ -176,5 +176,5 @@ Written to `{source_dir}/matching_analysis_consolidated.csv` after each scan.
 
 ---
 
-**Version**: v2.5
+**Version**: v2.6
 **Last Updated**: 2026-05-13 14:00
