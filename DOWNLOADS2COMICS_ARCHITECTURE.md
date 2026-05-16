@@ -1,6 +1,6 @@
 # Downloads2Comics — Architecture
 
-**Current version: v2.6**
+**Current version: v2.7**
 
 ## System Overview
 
@@ -202,7 +202,7 @@ COMIC_EXTS      = {'.cbz', '.cbr', '.zip', '.rar'}
 SKIP_PATTERNS   = {"comics_download.txt", "sha 01", "the bank", "the owl"}
 VOLUME_PATTERN  = r'\b(?:v|vol|book|t)\.?\s*\d+|TPB|Omnibus|...'
 ISSUE_PATTERN   = r'\s+#?\d+(?:\s*\(of\s*\d+\))?|\s+\(\d{1,3}\)'
-YEAR_PATTERN    = r'\((\d{4}(?:-\d{4})?)\)'
+YEAR_PATTERN    = r'\((\d{4})[^)]*\)'   # matches (2020), (2020-2021), (2020, 2nd edition), etc.
 SPECIFIC_SERIES_FOLDERS = {"Billy & Buddy", "Gomer Goof"}
 PUBLISHER_FOLDERS       = {"Cinebook (Europe)", "Fantagraphics (Europe)", ...}
 ```
@@ -222,9 +222,10 @@ PUBLISHER_FOLDERS       = {"Cinebook (Europe)", "Fantagraphics (Europe)", ...}
 **Matching (in priority order):**
 - `find_specific_series_match(filename, dest_map)` — rule 1: SPECIFIC_SERIES_FOLDERS substring
 - `find_publisher_match(filename, dest_map)` — rule 2: publisher keyword
-- `find_exact_match(src_series, dest_map)` — rule 3A: case-insensitive name; only if dest has folder OR loose_files
-- `find_fuzzy_match(src_series, dest_map)` — rule 3B: substring containment; dest must have actual folder
-- `find_matches(src_filename, src_series, dest_map)` — orchestrates rules 1–4; returns `(folder, data, confidence)`
+- `find_exact_match(src_series, dest_map)` — rule 3: case-insensitive name; matches if dest has folder OR loose_files
+- `find_matches(src_filename, src_series, dest_map)` — orchestrates rules 1–3; returns `(folder, data, confidence)`
+
+> Fuzzy/substring matching was removed — it caused false positives like "Girl" matching "ApocalyptiGirl" and "Saga" matching "Saga of the Swamp Thing".
 
 **Strategy:**
 - `generate_consolidation_strategy(src_filename, src_series, matched_series, match_data, confidence, remaining_files_count)` — maps match result → action type → CSV row dict
@@ -310,6 +311,7 @@ let _editId = null;         // Row ID currently being edited in modal
     hasFolder: "YES",
     hasFiles: "YES(3)",
     moveSource: "LEFT",
+    rightLooseFiles: "File A.cbr | File B.cbr",  // loose right-side files for this series
     destOverride: null,         // user-set destination folder
     seriesOverride: undefined,  // user-set series name
     // ...all CSV columns preserved
@@ -346,7 +348,7 @@ let _editId = null;         // Row ID currently being edited in modal
 - `getSelectedIds()` — return array of checked row IDs
 
 **Modals:**
-- `openDetails(id)` — full row data grid
+- `openDetails(id)` — full row data grid including Right Loose Files field
 - `openEditDest(id)` — destination folder override (browse + text tabs)
 - `openEditSeries(id)` — series name override (single: rescan; bulk: label only)
 
@@ -376,7 +378,8 @@ let _editId = null;         // Row ID currently being edited in modal
 | `CREATE_FOLDER_FROM_FOLDER` right-file moves | Right loose files read from CSV `Right Loose Files` column at move time | `matching_analysis_generator.py` — must write correct filenames to column at scan time | Right-side loose files not moved into new folder |
 | Subfolder EXACT match safety | No fuzzy/first-word matching for subfolders | `find_folder_match()` — must use EXACT only | Unrelated series (e.g. "Broken Eye" ↔ "Broken Pieces") merged together |
 | `comic_mover.py` folder cleanup | Source subfolder stored in `MoveOperation.source_subfolder` | `plan_moves()` — must set this field for folder-level actions | Empty source subfolders not deleted after move |
-| Year range extraction in dest keys | `(2019-2024)` extracted as a year range, not two separate years | `scan_destination_directory()` `YEAR_PATTERN = r'\((\d{4}(?:-\d{4})?)\)'` | Year-range destination folders not matched; CREATE instead of CONSOLIDATE |
+| Year range extraction in dest keys | `(2019-2024)` extracted as a year range, not two separate years | `scan_destination_directory()` uses `r'\((\d{4}(?:-\d{4})?)\)'` (strict — dest folders use exact year ranges) | Year-range destination folders not matched; CREATE instead of CONSOLIDATE |
+| Series name year/edition stripping | `parse_filename()` YEAR_PATTERN `r'\((\d{4})[^)]*\)'` strips any parenthetical starting with a year — including `(2020, 2nd edition)` | `matching_analysis_generator.py` — both patterns must stay in sync for their respective uses | Edition parentheticals leak into series name; ISSUE_PATTERN then truncates mid-token |
 
 ---
 
@@ -456,5 +459,5 @@ let _editId = null;         // Row ID currently being edited in modal
 
 ---
 
-**Version**: v2.6
-**Last Updated**: 2026-05-13 14:00
+**Version**: v2.7
+**Last Updated**: 2026-05-16

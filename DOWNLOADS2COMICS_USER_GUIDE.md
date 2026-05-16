@@ -1,6 +1,6 @@
 # Downloads2Comics — User Guide
 
-**Current version: v2.6**
+**Current version: v2.7**
 
 ---
 
@@ -261,6 +261,13 @@ python3 comic_mover.py --rollback
 
 ## Version History
 
+### v2.7 (2026-05-16)
+- Fixed series name truncation for filenames with edition info like `(2020, 2nd edition)` — year pattern now strips these correctly
+- Removed fuzzy/substring matching — series matching is now exact (case-insensitive) only, preventing false positives like "Girl" matching "ApocalyptiGirl" or "Saga" matching "Saga of the Swamp Thing"
+- Right Loose Files now populated for all action types (CONSOLIDATE, CREATE_FOLDER_WITH_FILES) at scan time — previously only shown for folder-level actions
+- Details modal now shows **Right Loose Files** field — lists loose destination files that will be co-moved into the new folder
+- `find_loose_right_files()` in comic_mover.py now strips year/edition parentheticals before substring search (defensive fix)
+
 ### v2.6 (2026-05-13)
 - ComicVine metadata integration planned (Phase 2) — series name validation and matching assistance
 - UI version string bumped to v2.6
@@ -299,7 +306,7 @@ python3 comic_mover.py --rollback
 
 ---
 
-**Version**: v2.6
-**Last Updated**: 2026-05-13 14:00
+**Version**: v2.7
+**Last Updated**: 2026-05-16
 **Server**: `serve_v2.py` (port 8123)
 **UI**: `comic_organizer_v2.html`

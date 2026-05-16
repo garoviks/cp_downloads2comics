@@ -1135,6 +1135,7 @@ async function scanFolders() {
       folder: r["Suggested Folder Name"],
       strategy: r["Consolidation Strategy"],
       moveSource: r["Move Source"],
+      rightLooseFiles: r["Right Loose Files"] || '',
     })));
 
     addLog(`📊 Data ready: ${data.length} files`);
@@ -1470,6 +1471,7 @@ function openDetails(id) {
     ['Has Existing Files', row.hasFiles],
     ['Consolidation Strategy', row.strategy],
     ['Move Source', row.moveSource],
+    ['Right Loose Files', row.rightLooseFiles || '(none)'],
   ];
   g.innerHTML = fields.map(([l, v]) =>
     `<div class="detail-label">${l}</div><div class="detail-value">${v}</div>`
@@ -1643,6 +1645,7 @@ async function reloadCSV() {
         folder: r["Suggested Folder Name"],
         strategy: r["Consolidation Strategy"],
         moveSource: r["Move Source"],
+        rightLooseFiles: r["Right Loose Files"] || '',
       })));
       renderAll();
       toast(`✅ CSV reloaded: ${csvData.length} rows`);
@@ -1748,6 +1751,7 @@ async function initApp() {
         folder: r["Suggested Folder Name"],
         strategy: r["Consolidation Strategy"],
         moveSource: r["Move Source"],
+        rightLooseFiles: r["Right Loose Files"] || '',
       })));
 
       renderAll();

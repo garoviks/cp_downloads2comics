@@ -110,13 +110,13 @@ def find_loose_right_files(series_name: str) -> List[Path]:
     Only looks for .cbz and .cbr files.
     Example: /mnt/extramedia/Comics/Feral 019.cbr
     """
+    clean = series_name.split('(')[0].strip()
+    search_term = clean.lower() if clean else series_name.lower()
     result = []
 
-    # Search base directory for files matching this series
     for item in DEST_DIR.iterdir():
         if item.is_file() and item.suffix.lower() in {'.cbz', '.cbr'}:
-            # Check if filename contains the series name
-            if series_name.lower() in item.name.lower():
+            if search_term in item.name.lower():
                 result.append(item)
 
     return result

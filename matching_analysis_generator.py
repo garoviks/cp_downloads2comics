@@ -34,7 +34,7 @@ ISSUE_PATTERN = re.compile(
     r'\s+#?\d+(?:\s*\(of\s*\d+\))?|\s+\(\d{1,3}\)'
 )
 
-YEAR_PATTERN = re.compile(r'\((\d{4}(?:-\d{4})?)\)')
+YEAR_PATTERN = re.compile(r'\((\d{4})[^)]*\)')
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CONFIG
@@ -564,12 +564,12 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
     Find matches using priority rules:
     1. Specific series folders (Billy & Buddy, Gomer Goof, etc.)
     2. Publisher folders (Cinebook, Fantagraphics, etc.)
-    3. Series name matching (exact, then fuzzy)
+    3. Series name exact match (case-insensitive) — folder or loose files
     4. No match (None)
 
     Returns: (matched_folder, match_data, confidence)
              where confidence is one of:
-             - 'SPECIFIC_SERIES', 'PUBLISHER', 'EXACT', 'FUZZY', 'NONE'
+             - 'SPECIFIC_SERIES', 'PUBLISHER', 'EXACT', 'NONE'
     """
     # Rule 1: Check for specific series folders
     specific = find_specific_series_match(src_filename, dest_map)
@@ -585,11 +585,6 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
     exact = find_exact_match(src_series, dest_map)
     if exact:
         return (exact[0], exact[1], "EXACT")
-
-    # Rule 3b: Try fuzzy series match
-    fuzzy = find_fuzzy_match(src_series, dest_map)
-    if fuzzy:
-        return (fuzzy[0], fuzzy[1], "FUZZY")
 
     # Rule 4: No match
     return (None, None, "NONE")
@@ -875,6 +870,10 @@ def main():
             row = generate_consolidation_strategy(
                 src_filename, src_series, matched_series, match_data, confidence, remaining_count
             )
+
+            # Populate Right Loose Files for all file-level action types
+            loose = dest_map.get(matched_series, {}).get("loose_files", []) if matched_series else []
+            row["Right Loose Files"] = " | ".join(loose)
 
             # Track statistics
             action_type = row["Action Type"]
