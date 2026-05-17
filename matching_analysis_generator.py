@@ -174,8 +174,8 @@ def normalize_name(name: str) -> str:
       "The Bank 01-02 (2025)" → "bank"
       "Sha 01-03" → "sha"
     """
-    # Remove articles at start
-    normalized = re.sub(r'^\b(the|a|an)\s+', '', name, flags=re.IGNORECASE)
+    normalized = re.sub(r'\bthe\b\s*', '', name, flags=re.IGNORECASE)   # strip "the" anywhere
+    normalized = re.sub(r'^\b(a|an)\s+', '', normalized, flags=re.IGNORECASE)  # a/an at start only
 
     # Remove volume patterns (v01, vol, book, 001-002, etc.)
     normalized = VOLUME_PATTERN.sub('', normalized)
@@ -186,8 +186,9 @@ def normalize_name(name: str) -> str:
     # Remove issue numbers
     normalized = ISSUE_PATTERN.sub('', normalized)
 
-    # Clean up spaces and lowercase
+    # Clean up spaces, normalize dashes, lowercase
     normalized = re.sub(r'\s+', ' ', normalized).strip().lower()
+    normalized = re.sub(r'\s*-\s*', ' ', normalized).strip()
 
     return normalized
 
@@ -374,8 +375,8 @@ def scan_source_directory() -> Dict[str, List[str]]:
             print(f"   ⏭️  [{i + 1}] SKIP: {filename} (series: {series})")
             continue
 
-        # Group case-insensitively, preserve first-seen casing
-        series_lower = series.lower()
+        # Group by normalized key (strips "the", dashes, whitespace), preserve first-seen casing
+        series_lower = normalize_name(series)
         if series_lower not in series_canonical:
             series_canonical[series_lower] = series
         canonical = series_canonical[series_lower]
