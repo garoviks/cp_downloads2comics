@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Comic File Organizer v2.9</title>
+<title>Comic File Organizer v2.10</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -513,7 +513,7 @@
      HEADER
 ══════════════════════════════════════════════════════════════════════════════ -->
 <header>
-  <h1>Comic File Organizer - Downloads2Comics <span>— v2.9 Consolidation Planner</span></h1>
+  <h1>Comic File Organizer - Downloads2Comics <span>— v2.10 Consolidation Planner</span></h1>
 </header>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -1174,10 +1174,11 @@ async function dryRun() {
   }
 
   try {
+    const selectedIds = getSelectedIds();
     const response = await fetch('/api/dry-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ overrides }),
+      body: JSON.stringify({ overrides, selected_ids: selectedIds }),
     });
 
     if (!response.ok) throw new Error(`Server error: ${response.status}`);
@@ -1217,10 +1218,11 @@ async function consolidate() {
   }
 
   try {
+    const selectedIds = getSelectedIds();
     const response = await fetch('/api/consolidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ overrides }),
+      body: JSON.stringify({ overrides, selected_ids: selectedIds }),
     });
 
     if (!response.ok) throw new Error(`Server error: ${response.status}`);
@@ -1445,7 +1447,16 @@ function filterTable(section) {
 
 function updateSelected() {
   const all = document.querySelectorAll('.row-chk:checked');
-  document.getElementById('stat-selected').textContent = all.length;
+  const n = all.length;
+  document.getElementById('stat-selected').textContent = n;
+  const dryBtn = document.getElementById('dryrun-btn');
+  const conBtn = document.getElementById('consolidate-btn');
+  if (dryBtn && !dryBtn.disabled) {
+    dryBtn.textContent = n > 0 ? `📋 Dry Run... (${n} selected)` : '📋 Dry Run...';
+  }
+  if (conBtn && !conBtn.disabled) {
+    conBtn.textContent = n > 0 ? `✨ Consolidate! (${n} selected)` : '✨ Consolidate! (all)';
+  }
 }
 
 function getSelectedIds() {
@@ -1764,7 +1775,7 @@ function initializeColumnResizing(tableId) {
 
 // ── Init ──
 async function initApp() {
-  console.log("🚀 Comic Organizer v2.9 initialized");
+  console.log("🚀 Comic Organizer v2.10 initialized");
   try {
     const response = await fetch('/api/csv');
     if (response.ok) {

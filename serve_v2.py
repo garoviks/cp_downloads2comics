@@ -177,6 +177,7 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         """Handle dry-run request with streaming output. Accepts overrides in POST body."""
         body = self.read_post_json()
         overrides = body.get("overrides", [])
+        selected_ids = body.get("selected_ids", [])
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -190,6 +191,8 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
             if overrides:
                 overrides_file = self.write_overrides_file(overrides)
                 cmd += ["--overrides", overrides_file]
+            if selected_ids:
+                cmd += ["--selected-ids", ",".join(str(i) for i in selected_ids)]
 
             process = subprocess.Popen(
                 cmd,
@@ -215,6 +218,7 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         """Handle consolidate request with streaming output. Accepts overrides in POST body."""
         body = self.read_post_json()
         overrides = body.get("overrides", [])
+        selected_ids = body.get("selected_ids", [])
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -228,6 +232,8 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
             if overrides:
                 overrides_file = self.write_overrides_file(overrides)
                 cmd += ["--overrides", overrides_file]
+            if selected_ids:
+                cmd += ["--selected-ids", ",".join(str(i) for i in selected_ids)]
 
             process = subprocess.Popen(
                 cmd,

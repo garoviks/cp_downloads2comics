@@ -430,6 +430,8 @@ Examples:
                         help="Skip confirmation prompt (use with caution)")
     parser.add_argument("--overrides", type=str, default=None,
                         help="Path to JSON file with user overrides [{left_file, series_name, dest_folder}]")
+    parser.add_argument("--selected-ids", type=str, default=None,
+                        help="Comma-separated 0-based row indices to process (omit for all rows)")
 
     args = parser.parse_args()
 
@@ -475,6 +477,17 @@ Examples:
                 print()
         except Exception as e:
             print(f"⚠️  Could not load overrides: {e}\n")
+
+    # Filter rows by selected indices if provided
+    if args.selected_ids:
+        try:
+            selected = [int(i.strip()) for i in args.selected_ids.split(',') if i.strip()]
+            original_count = len(rows)
+            rows = [rows[i] for i in selected if 0 <= i < original_count]
+            print(f"✏️  Processing {len(rows)} selected row(s) (of {original_count} total)\n")
+        except Exception as e:
+            print(f"⚠️  Invalid --selected-ids: {e}\n")
+            sys.exit(1)
 
     print("📐 Planning moves...")
     operations = plan_moves(rows)
