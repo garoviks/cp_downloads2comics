@@ -157,6 +157,46 @@ def extract_series_name(filename: str) -> str:
     return parsed['series']
 
 
+def get_canonical_series_for_folder(folder_path: Path) -> Optional[str]:
+    """Return most common series name among existing comic files in folder_path."""
+    if not folder_path.exists() or not folder_path.is_dir():
+        return None
+    counts: Dict[str, int] = {}
+    for f in folder_path.iterdir():
+        if f.is_file() and f.suffix.lower() in {'.cbz', '.cbr'}:
+            s = extract_series_name(f.name)
+            if s:
+                counts[s] = counts.get(s, 0) + 1
+    return max(counts, key=counts.get) if counts else None
+
+
+def propose_filename(src_filename: str, canonical_series: str) -> str:
+    """Replace series prefix in src_filename with canonical_series.
+    Returns src_filename unchanged if series already matches or issue can't be located."""
+    if not canonical_series:
+        return src_filename
+    src_series = extract_series_name(src_filename)
+    if not src_series or src_series == canonical_series:
+        return src_filename
+
+    ext = Path(src_filename).suffix
+    name_no_ext = src_filename[:-len(ext)] if ext else src_filename
+
+    # Strip year and suffix — keep them to reattach later
+    year_match = YEAR_PATTERN.search(name_no_ext)
+    name_for_issue = name_no_ext[:year_match.start()].strip() if year_match else name_no_ext
+    year_suffix = (' ' + name_no_ext[year_match.start():].strip()) if year_match else ''
+
+    # Remove volume patterns, then locate issue number in the pre-year portion
+    name_clean = VOLUME_PATTERN.sub('', name_for_issue).strip()
+    issue_match = ISSUE_PATTERN.search(name_clean)
+    if not issue_match:
+        return src_filename  # Can't safely determine where series ends
+
+    tail = name_clean[issue_match.start():]  # e.g. " 004" or " 04 (of 05)"
+    return canonical_series + tail + year_suffix + ext
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # FOLDER-BASED CONSOLIDATION (NEW)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -872,6 +912,19 @@ def main():
                 src_filename, src_series, matched_series, match_data, confidence, remaining_count
             )
 
+            # Compute proposed filename (rename to match canonical series in target folder)
+            proposed_filename = ""
+            if row.get("Action Type") == "CONSOLIDATE":
+                dest_folder_name = row.get("Suggested Folder Name", "").strip("/").strip()
+                if dest_folder_name:
+                    canonical = get_canonical_series_for_folder(DEST_DIR / dest_folder_name)
+                    if canonical:
+                        src_basename = Path(src_filename).name
+                        proposed = propose_filename(src_basename, canonical)
+                        if proposed != src_basename:
+                            proposed_filename = proposed
+            row["Proposed Filename"] = proposed_filename
+
             # Populate Right Loose Files for all file-level action types
             loose = dest_map.get(matched_series, {}).get("loose_files", []) if matched_series else []
             row["Right Loose Files"] = " | ".join(loose)
@@ -926,6 +979,7 @@ def main():
         "Move Source",
         "Files Details",
         "Right Loose Files",
+        "Proposed Filename",
     ]
 
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:

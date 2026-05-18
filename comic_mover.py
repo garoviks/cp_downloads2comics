@@ -219,9 +219,11 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
         else:
             dest_folder_path = DEST_DIR / dest_folder.strip('/')
 
-        # Add move for left panel file (just filename, not relative path)
+        # Add move for left panel file — use proposed filename if set (auto-rename)
         filename = Path(left_file).name
-        op.add_move(src_file, dest_folder_path / filename, "FILE")
+        proposed = row.get('Proposed Filename', '').strip()
+        dst_name = proposed if proposed else filename
+        op.add_move(src_file, dest_folder_path / dst_name, "FILE")
 
         # Handle right files if present
         if action in ["CONSOLIDATE", "CREATE_FOLDER_WITH_FILES"]:
@@ -458,6 +460,9 @@ Examples:
                         if "dest_folder" in o and o["dest_folder"]:
                             print(f"   Dest:   \"{row['Suggested Folder Name']}\" → \"{o['dest_folder']}\"")
                             row["Suggested Folder Name"] = o["dest_folder"]
+                        if "rename" in o and o["rename"]:
+                            print(f"   Rename: \"{row.get('Proposed Filename') or Path(key).name}\" → \"{o['rename']}\"")
+                            row["Proposed Filename"] = o["rename"]
                 print()
         except Exception as e:
             print(f"⚠️  Could not load overrides: {e}\n")

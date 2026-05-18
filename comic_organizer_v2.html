@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Comic File Organizer v2.6</title>
+<title>Comic File Organizer v2.8</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -229,6 +229,17 @@
     font-family: monospace;
     color: #a8dadc;
     font-size: 0.78rem;
+  }
+  .rename-note {
+    font-family: monospace;
+    font-size: 0.70rem;
+    color: #7fb3b3;
+    font-style: italic;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
   }
   .match-count {
     text-align: center;
@@ -502,7 +513,7 @@
      HEADER
 ══════════════════════════════════════════════════════════════════════════════ -->
 <header>
-  <h1>Comic File Organizer - Downloads2Comics <span>— v2.6 Consolidation Planner</span></h1>
+  <h1>Comic File Organizer - Downloads2Comics <span>— v2.8 Consolidation Planner</span></h1>
 </header>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -1136,6 +1147,7 @@ async function scanFolders() {
       strategy: r["Consolidation Strategy"],
       moveSource: r["Move Source"],
       rightLooseFiles: r["Right Loose Files"] || '',
+      proposedFilename: r["Proposed Filename"] || '',
     })));
 
     addLog(`📊 Data ready: ${data.length} files`);
@@ -1332,11 +1344,14 @@ function renderConsolidate(rows) {
     const hasFilesPill = row.hasFiles !== 'NO'
       ? '<span class="pill pill-yes">' + row.hasFiles + '</span>'
       : '<span class="pill pill-no">NO</span>';
+    const renameNote = row.proposedFilename
+      ? `<div class="rename-note" title="Will be renamed to: ${row.proposedFilename}">→ ${row.proposedFilename}</div>`
+      : '';
     const tr = document.createElement('tr');
     tr.id = 'row-' + row.id;
     tr.innerHTML = `
       <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
-      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div></td>
+      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div>${renameNote}</td>
       <td>${row.series}</td>
       <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
       <td class="match-count">${row.matches}</td>
@@ -1356,11 +1371,14 @@ function renderNewfolder(rows) {
   const tbody = document.getElementById('body-newfolder');
   tbody.innerHTML = '';
   rows.forEach(row => {
+    const renameNote = row.proposedFilename
+      ? `<div class="rename-note" title="Will be renamed to: ${row.proposedFilename}">→ ${row.proposedFilename}</div>`
+      : '';
     const tr = document.createElement('tr');
     tr.id = 'row-' + row.id;
     tr.innerHTML = `
       <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
-      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div></td>
+      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div>${renameNote}</td>
       <td>${row.series}</td>
       <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
       <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
@@ -1733,7 +1751,7 @@ function initializeColumnResizing(tableId) {
 
 // ── Init ──
 async function initApp() {
-  console.log("🚀 Comic Organizer v2.6 initialized");
+  console.log("🚀 Comic Organizer v2.8 initialized");
   try {
     const response = await fetch('/api/csv');
     if (response.ok) {
