@@ -16,7 +16,7 @@ import re
 import sys
 import argparse
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import Dict, List, Tuple, Optional
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -250,6 +250,9 @@ def extract_folder_series_name(folder_name: str) -> str:
 
     # Remove trailing issue numbers
     cleaned = re.sub(r'\s+\d+(?:-\d+)?$', '', cleaned).strip()
+
+    # Strip website/domain tags (e.g. "GetComics.INFO", "www.example.com")
+    cleaned = re.sub(r'\s+\w[\w.-]*\.\w{2,4}$', '', cleaned).strip()
 
     # Clean up spaces
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
@@ -794,7 +797,8 @@ def main():
             "Left Folder", "File Count", "Left Panel File", "Series Name",
             "Action Type", "Suggested Folder Name", "Right Panel Matches (Count)",
             "Has Existing Folder", "Has Existing Files", "Consolidation Strategy",
-            "Move Source", "Files Details", "Right Loose Files",
+            "Move Source", "Files Details", "Right Loose Files", "Proposed Filename",
+            "Proposed Files Details",
         ]
         output_dir = OUTPUT_FILE.parent
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -869,6 +873,22 @@ def main():
         right_match_count = len(right_loose_for_row) if right_loose_for_row else (file_count if matched_folder else 0)
         has_existing_files = f"YES ({len(right_loose_for_row)})" if right_loose_for_row else ("YES" if matched_folder else "NO")
 
+        # Compute proposed filenames for each file in the folder
+        dest_folder_path_for_canonical = DEST_DIR / dest_folder.strip('/')
+        canonical = get_canonical_series_for_folder(dest_folder_path_for_canonical)
+        if not canonical:
+            # Use most common series name from source files themselves
+            src_series_counts = Counter(extract_series_name(f) for f in files_in_folder if f)
+            canonical = src_series_counts.most_common(1)[0][0] if src_series_counts else None
+
+        proposed_files_details_parts = []
+        for fname in files_in_folder:
+            if canonical:
+                proposed = propose_filename(fname, canonical)
+                proposed_files_details_parts.append(proposed if proposed != fname else fname)
+            else:
+                proposed_files_details_parts.append(fname)
+
         row = {
             "Left Folder": folder_name,
             "File Count": file_count,
@@ -884,6 +904,7 @@ def main():
             "Confidence": match_type if matched_folder else "NEW",
             "Files Details": " | ".join(files_in_folder),
             "Right Loose Files": " | ".join(right_loose_for_row),
+            "Proposed Files Details": " | ".join(proposed_files_details_parts),
         }
         rows.append(row)
 
@@ -980,6 +1001,7 @@ def main():
         "Files Details",
         "Right Loose Files",
         "Proposed Filename",
+        "Proposed Files Details",
     ]
 
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:

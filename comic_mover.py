@@ -171,14 +171,23 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
                 operations.append(op)
                 continue
 
+            # Build orig→proposed map from Proposed Files Details column
+            proposed_details_str = row.get('Proposed Files Details', '').strip()
+            proposed_names = [f.strip() for f in proposed_details_str.split('|') if f.strip()] if proposed_details_str else []
+            rename_map = {}
+            for i, orig in enumerate(filenames):
+                if i < len(proposed_names) and proposed_names[i] and proposed_names[i] != orig:
+                    rename_map[orig] = proposed_names[i]
+
             # Determine destination folder
             dest_folder_path = DEST_DIR / dest_folder.strip('/')
 
-            # Add a move for each left file (flattened — just filename at dest)
+            # Add a move for each left file (flattened — use proposed name if available)
             for filename in filenames:
                 src_file = src_subfolder / filename
+                dst_name = rename_map.get(filename, filename)
                 if src_file.exists():
-                    op.add_move(src_file, dest_folder_path / filename, "FILE")
+                    op.add_move(src_file, dest_folder_path / dst_name, "FILE")
                 else:
                     print(f"   ⚠️  File not found in subfolder: {src_file}")
 

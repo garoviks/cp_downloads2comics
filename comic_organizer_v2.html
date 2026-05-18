@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Comic File Organizer v2.8</title>
+<title>Comic File Organizer v2.9</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -513,7 +513,7 @@
      HEADER
 ══════════════════════════════════════════════════════════════════════════════ -->
 <header>
-  <h1>Comic File Organizer - Downloads2Comics <span>— v2.8 Consolidation Planner</span></h1>
+  <h1>Comic File Organizer - Downloads2Comics <span>— v2.9 Consolidation Planner</span></h1>
 </header>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -1148,6 +1148,7 @@ async function scanFolders() {
       moveSource: r["Move Source"],
       rightLooseFiles: r["Right Loose Files"] || '',
       proposedFilename: r["Proposed Filename"] || '',
+      proposedFilesDetails: r["Proposed Files Details"] || '',
     })));
 
     addLog(`📊 Data ready: ${data.length} files`);
@@ -1306,14 +1307,26 @@ function renderFolders(rows) {
     const leftFiles = filesDetails ? filesDetails.split('|').map(f => f.trim()).filter(Boolean) : [];
     const rightFiles = rightLoose ? rightLoose.split('|').map(f => f.trim()).filter(Boolean) : [];
 
+    // Build orig→proposed map from Proposed Files Details
+    const proposedDetailsStr = row.proposedFilesDetails || '';
+    const proposedNames = proposedDetailsStr ? proposedDetailsStr.split('|').map(f => f.trim()) : [];
+    const renameMap = {};
+    leftFiles.forEach((fname, i) => {
+      if (proposedNames[i] && proposedNames[i] !== fname) renameMap[fname] = proposedNames[i];
+    });
+
     leftFiles.forEach(filename => {
+      const dstName = renameMap[filename] || filename;
+      const renameNote = renameMap[filename]
+        ? `<div class="rename-note" title="Will be renamed to: ${dstName}">→ ${dstName}</div>`
+        : '';
       const sub = document.createElement('tr');
       sub.className = 'file-subrow hidden';
       sub.dataset.parent = row.id;
       sub.innerHTML = `
         <td></td><td></td>
-        <td colspan="2"><span style="color:#a8dadc;">↳ LEFT:</span> ${filename}</td>
-        <td colspan="5" style="color:#7fb3b3;">→ ${effectiveFolder(row)}/${filename}</td>`;
+        <td colspan="2"><span style="color:#a8dadc;">↳ LEFT:</span> ${filename}${renameNote}</td>
+        <td colspan="5" style="color:#7fb3b3;">→ ${effectiveFolder(row)}/${dstName}</td>`;
       tbody.appendChild(sub);
     });
 
@@ -1751,7 +1764,7 @@ function initializeColumnResizing(tableId) {
 
 // ── Init ──
 async function initApp() {
-  console.log("🚀 Comic Organizer v2.8 initialized");
+  console.log("🚀 Comic Organizer v2.9 initialized");
   try {
     const response = await fetch('/api/csv');
     if (response.ok) {
