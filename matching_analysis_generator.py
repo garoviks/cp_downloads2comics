@@ -111,6 +111,9 @@ def parse_filename(filename: str) -> Dict[str, Optional[str]]:
     if year_match:
         name = name[:year_match.start()].strip()
 
+    # Strip all remaining parenthetical blocks — series/issue names are never inside parens
+    name = re.sub(r'\s*\([^)]*\)', '', name).strip()
+
     # Remove volume patterns (v04, TPB, Omnibus, etc.)
     name = VOLUME_PATTERN.sub('', name).strip()
 
