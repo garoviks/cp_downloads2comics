@@ -190,6 +190,9 @@ def propose_filename(src_filename: str, canonical_series: str) -> str:
     name_for_issue = name_no_ext[:year_match.start()].strip() if year_match else name_no_ext
     year_suffix = (' ' + name_no_ext[year_match.start():].strip()) if year_match else ''
 
+    # Strip all parenthetical blocks — series/issue names are never inside parens
+    name_for_issue = re.sub(r'\s*\([^)]*\)', '', name_for_issue).strip()
+
     # Remove volume patterns, then locate issue number in the pre-year portion
     name_clean = VOLUME_PATTERN.sub('', name_for_issue).strip()
     issue_match = ISSUE_PATTERN.search(name_clean)
@@ -623,15 +626,15 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
     if specific:
         return (specific[0], specific[1], specific[2])
 
-    # Rule 2: Check for publisher folders
-    publisher = find_publisher_match(src_filename, dest_map)
-    if publisher:
-        return (publisher[0], publisher[1], publisher[2])
-
-    # Rule 3a: Try exact series match
+    # Rule 2: Try exact series match (before publisher — a series folder beats a publisher folder)
     exact = find_exact_match(src_series, dest_map)
     if exact:
         return (exact[0], exact[1], "EXACT")
+
+    # Rule 3: Check for publisher folders
+    publisher = find_publisher_match(src_filename, dest_map)
+    if publisher:
+        return (publisher[0], publisher[1], publisher[2])
 
     # Rule 4: No match
     return (None, None, "NONE")
