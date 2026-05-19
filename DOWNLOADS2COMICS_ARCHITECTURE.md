@@ -210,7 +210,7 @@ PUBLISHER_FOLDERS       = {"Cinebook (Europe)", "Fantagraphics (Europe)", ...}
 #### Key Functions
 
 **Parsing:**
-- `parse_filename(filename)` — extract series, subtitle, year from filename; strips volume/issue/year patterns
+- `parse_filename(filename)` — extract series, subtitle, year; strips year anchor, then ALL parenthetical blocks, then volume/issue patterns. Parentheticals stripped before VOLUME_PATTERN/ISSUE_PATTERN to prevent publisher tags like `(Cinebook 2026)` from corrupting series extraction.
 - `normalize_name(name)` — lowercase, remove articles/volumes/years for loose comparison
 - `extract_folder_series_name(folder_name)` — strip year ranges, volume info from folder name
 
@@ -221,9 +221,11 @@ PUBLISHER_FOLDERS       = {"Cinebook (Europe)", "Fantagraphics (Europe)", ...}
 
 **Matching (in priority order):**
 - `find_specific_series_match(filename, dest_map)` — rule 1: SPECIFIC_SERIES_FOLDERS substring
-- `find_publisher_match(filename, dest_map)` — rule 2: publisher keyword
-- `find_exact_match(src_series, dest_map)` — rule 3: case-insensitive name; matches if dest has folder OR loose_files
+- `find_exact_match(src_series, dest_map)` — rule 2: case-insensitive name; matches if dest has folder OR loose_files
+- `find_publisher_match(filename, dest_map)` — rule 3: publisher keyword (only if no exact series folder exists)
 - `find_matches(src_filename, src_series, dest_map)` — orchestrates rules 1–3; returns `(folder, data, confidence)`
+
+> Exact series match is checked before publisher match — a dedicated series folder always beats a publisher folder (e.g. "Adventures of Blake & Mortimer" should not fall back to "Cinebook (Europe)" even when the filename contains "Cinebook").
 
 > Fuzzy/substring matching was removed — it caused false positives like "Girl" matching "ApocalyptiGirl" and "Saga" matching "Saga of the Swamp Thing".
 
@@ -379,7 +381,8 @@ let _editId = null;         // Row ID currently being edited in modal
 | Subfolder EXACT match safety | No fuzzy/first-word matching for subfolders | `find_folder_match()` — must use EXACT only | Unrelated series (e.g. "Broken Eye" ↔ "Broken Pieces") merged together |
 | `comic_mover.py` folder cleanup | Source subfolder stored in `MoveOperation.source_subfolder` | `plan_moves()` — must set this field for folder-level actions | Empty source subfolders not deleted after move |
 | Year range extraction in dest keys | `(2019-2024)` extracted as a year range, not two separate years | `scan_destination_directory()` uses `r'\((\d{4}(?:-\d{4})?)\)'` (strict — dest folders use exact year ranges) | Year-range destination folders not matched; CREATE instead of CONSOLIDATE |
-| Series name year/edition stripping | `parse_filename()` YEAR_PATTERN `r'\((\d{4})[^)]*\)'` strips any parenthetical starting with a year — including `(2020, 2nd edition)` | `matching_analysis_generator.py` — both patterns must stay in sync for their respective uses | Edition parentheticals leak into series name; ISSUE_PATTERN then truncates mid-token |
+| Series name parenthetical stripping | `parse_filename()` strips ALL parenthetical blocks (`\s*\([^)]*\)`) before VOLUME_PATTERN/ISSUE_PATTERN. Year is extracted first from original name, then remaining parens are stripped. Same stripping applied inside `propose_filename()`. | `matching_analysis_generator.py` | Publisher tags like `(Cinebook 2026)` leak into series name; ISSUE_PATTERN treats the year as an issue number, corrupting the series |
+| Matching rule order | Exact series match (rule 2) checked before publisher match (rule 3) | `find_matches()` in `matching_analysis_generator.py` | Series with publisher tag in filename (e.g. Blake & Mortimer with "Cinebook") fall through to publisher folder instead of their own series folder |
 
 ---
 
