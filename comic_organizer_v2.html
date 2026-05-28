@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Comic File Organizer v2.11</title>
+<title>Comic File Organizer v2.12</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -513,7 +513,7 @@
      HEADER
 ══════════════════════════════════════════════════════════════════════════════ -->
 <header>
-  <h1>Comic File Organizer - Downloads2Comics <span>— v2.11 Consolidation Planner</span></h1>
+  <h1>Comic File Organizer - Downloads2Comics <span>— v2.12 Consolidation Planner</span></h1>
 </header>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -1515,6 +1515,7 @@ function openDetails(id) {
     ['Has Existing Files', row.hasFiles],
     ['Consolidation Strategy', row.strategy],
     ['Move Source', row.moveSource],
+    ['Proposed Filename', row.proposedFilename || '(none)'],
     ['Right Loose Files', row.rightLooseFiles || '(none)'],
   ];
   g.innerHTML = fields.map(([l, v]) =>
@@ -1777,7 +1778,7 @@ function initializeColumnResizing(tableId) {
 
 // ── Init ──
 async function initApp() {
-  console.log("🚀 Comic Organizer v2.11 initialized");
+  console.log("🚀 Comic Organizer v2.12 initialized");
   try {
     const response = await fetch('/api/csv');
     if (response.ok) {

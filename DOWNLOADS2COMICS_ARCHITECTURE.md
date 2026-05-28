@@ -1,6 +1,6 @@
 # Downloads2Comics — Architecture
 
-**Current version: v2.7**
+**Current version: v2.12**
 
 ## System Overview
 
@@ -383,6 +383,8 @@ let _editId = null;         // Row ID currently being edited in modal
 | Year range extraction in dest keys | `(2019-2024)` extracted as a year range, not two separate years | `scan_destination_directory()` uses `r'\((\d{4}(?:-\d{4})?)\)'` (strict — dest folders use exact year ranges) | Year-range destination folders not matched; CREATE instead of CONSOLIDATE |
 | Series name parenthetical stripping | `parse_filename()` strips ALL parenthetical blocks (`\s*\([^)]*\)`) before VOLUME_PATTERN/ISSUE_PATTERN. Year is extracted first from original name, then remaining parens are stripped. Same stripping applied inside `propose_filename()`. | `matching_analysis_generator.py` | Publisher tags like `(Cinebook 2026)` leak into series name; ISSUE_PATTERN treats the year as an issue number, corrupting the series |
 | Matching rule order | Exact series match (rule 2) checked before publisher match (rule 3) | `find_matches()` in `matching_analysis_generator.py` | Series with publisher tag in filename (e.g. Blake & Mortimer with "Cinebook") fall through to publisher folder instead of their own series folder |
+| `propose_filename` normalize guard | Before renaming, checks `normalize_name(canonical) == normalize_name(src_series)`. Only renames to fix "The" insertion/removal or capitalization — never replaces with a genuinely different series name. | `matching_analysis_generator.py` — `propose_filename()` | Folders containing a mix of series (e.g. Valentine's Day specials alongside main series) cause canonical to be a completely different series name, producing bogus renames |
+| Details modal shows Proposed Filename | `openDetails()` includes `Proposed Filename` field so rename action is visible in the modal | `comic_organizer_v2.html` — `openDetails()` | Users see rename note on main row but clicking Details shows no rename action |
 
 ---
 
@@ -462,5 +464,5 @@ let _editId = null;         // Row ID currently being edited in modal
 
 ---
 
-**Version**: v2.7
-**Last Updated**: 2026-05-16
+**Version**: v2.12
+**Last Updated**: 2026-05-28

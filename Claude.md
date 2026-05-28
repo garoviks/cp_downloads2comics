@@ -1,4 +1,4 @@
-# Comic File Organizer — Claude Context (v2.5)
+# Comic File Organizer — Claude Context (v2.12)
 
 ## What This Project Does
 Consolidates downloaded comic files from source folder into organized destination library.
@@ -7,7 +7,22 @@ Consolidates downloaded comic files from source folder into organized destinatio
 **Destination (right):** `/mnt/extramedia/Comics/` (~47,000 items, ~11,900 unique series)
 **CSV:** `/home/nesha/Downloads/comics_download/matching_analysis_consolidated.csv`
 
-## Recent Updates (v2.5)
+## Recent Updates (v2.12)
+**Two more matching/rename bugs fixed:**
+1. `propose_filename` normalize guard — only rename if `normalize_name(canonical) == normalize_name(src_series)`; prevents folders with mixed series (e.g. Valentine's specials) from producing bogus renames like `Supernatural Valentine's 007`
+2. Details modal now shows `Proposed Filename` field so rename action is visible when clicking Details
+
+## Recent Updates (v2.11)
+**Seven matching/rename bugs fixed:**
+1. ISSUE_PATTERN capped at `\d{1,3}` — 4-digit title years (e.g. `1880`) no longer treated as issue numbers
+2. VOLUME_PATTERN extended with `Annual|Special|Giant` — strips these words during series extraction
+3. `NO_RENAME_KEYWORDS` — files containing "annual", "special", "giant", "one-shot" are never renamed
+4. `propose_filename` skips PUBLISHER-confidence matches — prevents bogus renames from publisher folder canonical
+5. `find_exact_match` second pass with `normalize_name()` — handles "The" insertion/removal (e.g. `Judge Dredd Megazine` ↔ `Judge Dredd The Megazine`)
+6. Before-dash fallback in `find_matches()` — arc/subtitle series (e.g. `Lady Mechanika - The Mechanical Menagerie`) match parent folder (`Lady Mechanika`)
+7. UI basename display — subfolder files show filename only, not full relative path
+
+## Previous Updates (v2.5)
 **Three critical matching bugs fixed:**
 1. Year range handling — destination folders with year ranges like (2019-2024) now extract correctly
 2. Consolidation path accuracy — now uses actual folder names instead of extracted keys (preserves year/edition)
