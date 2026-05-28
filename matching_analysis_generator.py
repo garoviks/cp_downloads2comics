@@ -185,6 +185,8 @@ def propose_filename(src_filename: str, canonical_series: str) -> str:
     src_series = extract_series_name(src_filename)
     if not src_series or src_series == canonical_series:
         return src_filename
+    if ' - ' in src_series:
+        return src_filename  # Arc/subtitle files keep their original name
 
     ext = Path(src_filename).suffix
     name_no_ext = src_filename[:-len(ext)] if ext else src_filename
