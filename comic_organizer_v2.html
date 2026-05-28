@@ -1515,7 +1515,7 @@ function openDetails(id) {
     ['Has Existing Files', row.hasFiles],
     ['Consolidation Strategy', row.strategy],
     ['Move Source', row.moveSource],
-    ['Proposed Filename', row.proposedFilename || '(none)'],
+    ['Proposed NEW Filename', row.proposedFilename || '(none)'],
     ['Right Loose Files', row.rightLooseFiles || '(none)'],
   ];
   g.innerHTML = fields.map(([l, v]) =>
