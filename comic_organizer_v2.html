@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Comic File Organizer v2.10</title>
+<title>Comic File Organizer v2.11</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -513,7 +513,7 @@
      HEADER
 ══════════════════════════════════════════════════════════════════════════════ -->
 <header>
-  <h1>Comic File Organizer - Downloads2Comics <span>— v2.10 Consolidation Planner</span></h1>
+  <h1>Comic File Organizer - Downloads2Comics <span>— v2.11 Consolidation Planner</span></h1>
 </header>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -1345,6 +1345,8 @@ function renderFolders(rows) {
   });
 }
 
+function basename(p) { return p.split('/').pop(); }
+
 function effectiveFolder(row) {
   return row.destOverride !== null ? row.destOverride : row.folder;
 }
@@ -1366,7 +1368,7 @@ function renderConsolidate(rows) {
     tr.id = 'row-' + row.id;
     tr.innerHTML = `
       <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
-      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div>${renameNote}</td>
+      <td><div class="file-name" title="${row.leftFile}">${basename(row.leftFile)}</div>${renameNote}</td>
       <td>${row.series}</td>
       <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
       <td class="match-count">${row.matches}</td>
@@ -1393,7 +1395,7 @@ function renderNewfolder(rows) {
     tr.id = 'row-' + row.id;
     tr.innerHTML = `
       <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
-      <td><div class="file-name" title="${row.leftFile}">${row.leftFile}</div>${renameNote}</td>
+      <td><div class="file-name" title="${row.leftFile}">${basename(row.leftFile)}</div>${renameNote}</td>
       <td>${row.series}</td>
       <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
       <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
@@ -1775,7 +1777,7 @@ function initializeColumnResizing(tableId) {
 
 // ── Init ──
 async function initApp() {
-  console.log("🚀 Comic Organizer v2.10 initialized");
+  console.log("🚀 Comic Organizer v2.11 initialized");
   try {
     const response = await fetch('/api/csv');
     if (response.ok) {

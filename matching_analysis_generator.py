@@ -26,13 +26,15 @@ from typing import Dict, List, Tuple, Optional
 COMIC_EXTS = {'.cbz', '.cbr', '.zip', '.rar'}
 
 VOLUME_PATTERN = re.compile(
-    r'\b(?:v|vol|book|t)\.?\s*\d+|TPB|Omnibus|Collection|Graphic\s*Novel|GN|HC|Scanlation|Complete',
+    r'\b(?:v|vol|book|t)\.?\s*\d+|TPB|Omnibus|Collection|Graphic\s*Novel|GN|HC|Scanlation|Complete|Annual|Special|Giant',
     re.IGNORECASE
 )
 
 ISSUE_PATTERN = re.compile(
-    r'\s+#?\d+(?:\s*\(of\s*\d+\))?|\s+\(\d{1,3}\)'
+    r'\s+#?\d{1,3}(?:\s*\(of\s*\d+\))?|\s+\(\d{1,3}\)'
 )
+
+NO_RENAME_KEYWORDS = {"annual", "special", "giant", "one-shot"}
 
 YEAR_PATTERN = re.compile(r'\((\d{4})[^)]*\)')
 
@@ -177,6 +179,8 @@ def propose_filename(src_filename: str, canonical_series: str) -> str:
     """Replace series prefix in src_filename with canonical_series.
     Returns src_filename unchanged if series already matches or issue can't be located."""
     if not canonical_series:
+        return src_filename
+    if any(kw in src_filename.lower() for kw in NO_RENAME_KEYWORDS):
         return src_filename
     src_series = extract_series_name(src_filename)
     if not src_series or src_series == canonical_series:
@@ -553,15 +557,23 @@ def find_exact_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dic
     Returns a match if dest entry has a folder OR loose files in base dir.
     Does NOT count files_in_folders alone — those belong to a different series'
     folder and fuzzy matching will find the correct parent folder instead.
+    Also tries normalized comparison (strips 'The', etc.) as a second pass.
     Returns: (matched_series_name, match_data) or None
     """
     src_lower = src_series.lower()
+    # First pass: raw case-insensitive
     for dest_series, dest_data in dest_map.items():
         if dest_series.lower() == src_lower:
             has_folder = bool(dest_data.get("folders"))
             has_loose = bool(dest_data.get("loose_files"))
-            # Match if there's a folder OR loose files in base dir
-            # (files_in_folders alone means they live inside a different folder)
+            if has_folder or has_loose:
+                return (dest_series, dest_data)
+    # Second pass: normalized comparison (handles "The" insertion/removal, year parens, etc.)
+    src_norm = normalize_name(src_series)
+    for dest_series, dest_data in dest_map.items():
+        if normalize_name(dest_series) == src_norm:
+            has_folder = bool(dest_data.get("folders"))
+            has_loose = bool(dest_data.get("loose_files"))
             if has_folder or has_loose:
                 return (dest_series, dest_data)
     return None
@@ -630,6 +642,14 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
     exact = find_exact_match(src_series, dest_map)
     if exact:
         return (exact[0], exact[1], "EXACT")
+
+    # Rule 2b: Before-dash fallback — try main series name without arc subtitle
+    if ' - ' in src_series:
+        main_series = src_series.split(' - ')[0].strip()
+        if main_series and main_series != src_series:
+            exact_main = find_exact_match(main_series, dest_map)
+            if exact_main:
+                return (exact_main[0], exact_main[1], "EXACT")
 
     # Rule 3: Check for publisher folders
     publisher = find_publisher_match(src_filename, dest_map)
@@ -941,7 +961,7 @@ def main():
 
             # Compute proposed filename (rename to match canonical series in target folder)
             proposed_filename = ""
-            if row.get("Action Type") == "CONSOLIDATE":
+            if row.get("Action Type") == "CONSOLIDATE" and confidence != "PUBLISHER":
                 dest_folder_name = row.get("Suggested Folder Name", "").strip("/").strip()
                 if dest_folder_name:
                     canonical = get_canonical_series_for_folder(DEST_DIR / dest_folder_name)
