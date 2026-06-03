@@ -655,6 +655,14 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
             if exact_main:
                 return (exact_main[0], exact_main[1], "EXACT")
 
+    # Rule 2c: Trailing issue-number fallback — strip 3-4 digit trailing number
+    # Handles series like "2000AD prog 2485" → "2000AD prog"
+    stripped = re.sub(r'\s+\d{3,4}$', '', src_series).strip()
+    if stripped and stripped != src_series:
+        exact_stripped = find_exact_match(stripped, dest_map)
+        if exact_stripped:
+            return (exact_stripped[0], exact_stripped[1], "EXACT")
+
     # Rule 3: Check for publisher folders
     publisher = find_publisher_match(src_filename, dest_map)
     if publisher:
