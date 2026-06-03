@@ -31,7 +31,7 @@ VOLUME_PATTERN = re.compile(
 )
 
 ISSUE_PATTERN = re.compile(
-    r'\s+#?\d{1,3}(?:\s*\(of\s*\d+\))?|\s+\(\d{1,3}\)'
+    r'\s+#?\d{1,3}(?!\d)(?:\s*\(of\s*\d+\))?|\s+\(\d{1,3}\)'
 )
 
 NO_RENAME_KEYWORDS = {"annual", "special", "giant", "one-shot"}
