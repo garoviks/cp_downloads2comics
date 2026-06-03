@@ -386,6 +386,7 @@ let _editId = null;         // Row ID currently being edited in modal
 | `propose_filename` normalize guard | Before renaming, checks `normalize_name(canonical) == normalize_name(src_series)`. Only renames to fix "The" insertion/removal or capitalization — never replaces with a genuinely different series name. | `matching_analysis_generator.py` — `propose_filename()` | Folders containing a mix of series (e.g. Valentine's Day specials alongside main series) cause canonical to be a completely different series name, producing bogus renames |
 | Details modal shows Proposed Filename | `openDetails()` includes `Proposed Filename` field so rename action is visible in the modal | `comic_organizer_v2.html` — `openDetails()` | Users see rename note on main row but clicking Details shows no rename action |
 | ISSUE_PATTERN negative lookahead | `\d{1,3}(?!\d)` — digit group only matches if NOT followed by another digit, preventing prefix match on 4-digit numbers | `matching_analysis_generator.py` — `ISSUE_PATTERN` | `Yucatan 1512` extracted as `Yucatan` because ` 151` matched from ` 1512` |
+| Rule 2c: trailing issue-number fallback | After exact match fails, strip trailing 3-4 digit number from series and retry exact match. Handles weekly anthology prog numbers (e.g. `2000AD prog 2485` → `2000AD prog`). ISSUE_PATTERN caps at 3 digits so 4-digit prog numbers can't be stripped during extraction. | `find_matches()` in `matching_analysis_generator.py` | `2000AD prog 2485` falls through to COPY_TO_BASE instead of matching `/2000AD prog/` folder |
 
 ---
 
