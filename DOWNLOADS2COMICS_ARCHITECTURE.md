@@ -385,6 +385,7 @@ let _editId = null;         // Row ID currently being edited in modal
 | Matching rule order | Exact series match (rule 2) checked before publisher match (rule 3) | `find_matches()` in `matching_analysis_generator.py` | Series with publisher tag in filename (e.g. Blake & Mortimer with "Cinebook") fall through to publisher folder instead of their own series folder |
 | `propose_filename` normalize guard | Before renaming, checks `normalize_name(canonical) == normalize_name(src_series)`. Only renames to fix "The" insertion/removal or capitalization — never replaces with a genuinely different series name. | `matching_analysis_generator.py` — `propose_filename()` | Folders containing a mix of series (e.g. Valentine's Day specials alongside main series) cause canonical to be a completely different series name, producing bogus renames |
 | Details modal shows Proposed Filename | `openDetails()` includes `Proposed Filename` field so rename action is visible in the modal | `comic_organizer_v2.html` — `openDetails()` | Users see rename note on main row but clicking Details shows no rename action |
+| ISSUE_PATTERN negative lookahead | `\d{1,3}(?!\d)` — digit group only matches if NOT followed by another digit, preventing prefix match on 4-digit numbers | `matching_analysis_generator.py` — `ISSUE_PATTERN` | `Yucatan 1512` extracted as `Yucatan` because ` 151` matched from ` 1512` |
 
 ---
 

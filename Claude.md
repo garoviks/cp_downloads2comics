@@ -7,10 +7,11 @@ Consolidates downloaded comic files from source folder into organized destinatio
 **Destination (right):** `/mnt/extramedia/Comics/` (~47,000 items, ~11,900 unique series)
 **CSV:** `/home/nesha/Downloads/comics_download/matching_analysis_consolidated.csv`
 
-## Recent Updates (v2.12)
-**Two more matching/rename bugs fixed:**
+## Recent Updates (v2.12+)
+**Three more matching/rename bugs fixed:**
 1. `propose_filename` normalize guard — only rename if `normalize_name(canonical) == normalize_name(src_series)`; prevents folders with mixed series (e.g. Valentine's specials) from producing bogus renames like `Supernatural Valentine's 007`
-2. Details modal now shows `Proposed Filename` field so rename action is visible when clicking Details
+2. Details modal now shows `Proposed NEW Filename` field so rename action is visible when clicking Details
+3. ISSUE_PATTERN `(?!\d)` lookahead — prevents prefix match on 4-digit numbers (e.g. `Yucatan 1512` extracting as `Yucatan` via ` 151` match)
 
 ## Recent Updates (v2.11)
 **Seven matching/rename bugs fixed:**
