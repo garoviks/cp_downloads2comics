@@ -43,11 +43,10 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
             self.serve_file(HTML_FILE, "text/html")
             return
 
-        # Serve static files
-        try:
-            super().do_GET()
-        except Exception as e:
-            self.send_error(404)
+        # Nothing else is served. Falling through to SimpleHTTPRequestHandler.do_GET()
+        # would serve the whole working directory over HTTP — including the SSH keys
+        # and any other file in the project folder. The UI needs no other assets.
+        self.send_error(404)
 
     def do_POST(self):
         """Handle POST requests (scan, dry-run, consolidate)."""
