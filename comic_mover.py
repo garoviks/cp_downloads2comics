@@ -389,21 +389,42 @@ def rollback():
     print(f"\n🔙 Rolling back execution from {timestamp}")
     print(f"   Total operations: {len(operations_data)}\n")
 
-    rolled_back = 0
+    restored = 0
+    skipped = 0
+    failed = 0
     for op_data in operations_data:
         for move_data in op_data.get("moves", []):
-            if move_data.get("executed"):
-                src = Path(move_data["dst"])
-                if src.exists():
-                    try:
-                        if src.is_file():
-                            src.unlink()
-                            print(f"   ✅ Deleted: {src.name}")
-                        rolled_back += 1
-                    except Exception as e:
-                        print(f"   ❌ Error deleting {src}: {e}")
+            if not move_data.get("executed"):
+                continue
 
-    print(f"\n✅ Rollback complete. {rolled_back} files deleted.")
+            # The file currently lives at "dst"; put it back where it came from.
+            current = Path(move_data["dst"])
+            original = Path(move_data["src"])
+
+            if not current.exists():
+                print(f"   ⏭️  Not where we left it, cannot restore: {current}")
+                skipped += 1
+                continue
+
+            # Never overwrite: if something already occupies the original path,
+            # leave both files alone and let the user decide.
+            if original.exists():
+                print(f"   ⏭️  Original path occupied, leaving in place: {original}")
+                skipped += 1
+                continue
+
+            try:
+                original.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(current), str(original))
+                print(f"   ✅ Restored: {current.name} → {original.parent.name}/")
+                restored += 1
+            except Exception as e:
+                print(f"   ❌ Error restoring {current}: {e}")
+                failed += 1
+
+    print(f"\n✅ Rollback complete. {restored} restored, {skipped} skipped, {failed} failed.")
+    if skipped or failed:
+        print("   ⚠️  Some files were not restored — nothing was deleted, review the messages above.")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MAIN
