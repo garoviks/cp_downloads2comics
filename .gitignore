@@ -1,0 +1,22 @@
+# Secrets — no key material of any kind belongs in this repo
+*.key
+*.pem
+*.pub
+id_rsa*
+id_ed25519*
+github_key_*
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Runtime state / logs
+.logs/
+*.log
+
+# LibreOffice / editor lock files
+.~lock.*#
+
+# Generated analysis output — rewritten by every scan
+matching_analysis.csv
+matching_analysis_consolidated.csv
