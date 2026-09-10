@@ -25,10 +25,23 @@ from typing import Dict, List, Tuple, Optional
 
 COMIC_EXTS = {'.cbz', '.cbr', '.zip', '.rar'}
 
-VOLUME_PATTERN = re.compile(
-    r'\b(?:v|vol|book|t)\.?\s*\d+|TPB|Omnibus|Collection|Graphic\s*Novel|GN|HC|Scanlation|Complete|Annual|Special|Giant',
-    re.IGNORECASE
-)
+# Anchors are (?<![A-Za-z0-9]) / (?![A-Za-z0-9]) rather than \b, because \b counts
+# '_' as a word character and release filenames are full of underscores
+# (e.g. 'Nancy_In_Hell_Complete_Minutemen' — \b would refuse to strip 'Complete').
+#
+# NOTE: \b binds only to the FIRST alternative. The previous single-\b form left
+# every later keyword unanchored, so 'GN'/'HC' matched mid-word:
+# 'Signal' -> 'Sial', 'Bytchcraft' -> 'Bytcraft', 'Ashcan' -> 'Asan'.
+# Every alternative must carry its own anchors.
+#
+# comic_volume_creator_server.py has its own copy of this pattern with a shorter
+# keyword list. The drift is known and deliberately not resolved here — whether
+# these should be shared at all is an architecture question, not a bug fix.
+_NB, _NA = r'(?<![A-Za-z0-9])', r'(?![A-Za-z0-9])'
+_VOL_NUM = rf'{_NB}(?:v|vol|book|t)\.?\s*\d+{_NA}'
+_VOL_WORDS = (r'(?:TPB|Omnibus|Collection|Graphic\s*Novel|GN|HC|Scanlation'
+              r'|Complete|Annual|Special|Giant)')
+VOLUME_PATTERN = re.compile(rf'{_VOL_NUM}|{_NB}{_VOL_WORDS}{_NA}', re.IGNORECASE)
 
 ISSUE_PATTERN = re.compile(
     r'\s+#?\d{1,3}(?!\d)(?:\s*\(of\s*\d+\))?|\s+\(\d{1,3}\)'
