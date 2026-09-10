@@ -3,7 +3,7 @@
 Comic File Organizer — Matching Analysis Generator
 
 Reads source and destination directories, extracts series names,
-performs exact/fuzzy matching, and generates consolidation strategies.
+performs exact matching, and generates consolidation strategies.
 
 Output: matching_analysis_consolidated.csv
 
@@ -71,16 +71,6 @@ SKIP_PATTERNS = {
 SPECIFIC_SERIES_FOLDERS = {
     "Billy & Buddy",
     "Gomer Goof",
-}
-
-# Known publisher folders (rule 2 priority)
-PUBLISHER_FOLDERS = {
-    "Cinebook (Europe)",
-    "Europe Comics (Collection)",
-    "Fantagraphics (Europe)",
-    "Humanoids (Europe)",
-    "SAF Comics (Europe Collection) (2019)",
-    "Soleil (Europe)",
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -347,7 +337,7 @@ def scan_source_subfolders() -> Dict[str, Dict]:
             "files": ["Sha 01.cbr", "Sha 02.cbr"],
             "folder_path": Path(...),
             "matched_folder": "Sha/" or None,
-            "match_type": "EXACT"/"FUZZY"/None
+            "match_type": "EXACT"/None
         },
         ...
     }
@@ -588,10 +578,10 @@ def find_publisher_match(filename: str, dest_map: Dict) -> Optional[Tuple[str, D
         "Cinebook", "Fantagraphics", "Humanoids", "Soleil", "SAF"
     }
 
-    # NOTE: this inline set duplicates PUBLISHER_FOLDERS (:77), which is declared
-    # and never read. The two have already drifted — PUBLISHER_FOLDERS also lists
-    # 'Europe Comics (Collection)'. Reconciling them changes which files match, so
-    # it is a behaviour decision, not part of this fix.
+    # This used to duplicate a module-level PUBLISHER_FOLDERS constant that was
+    # declared and never read, and which had already drifted from this set (it
+    # also listed 'Europe Comics (Collection)'). The dead constant is gone; this
+    # keyword set is the single source of truth for publisher matching.
     for keyword in publisher_keywords:
         if contains_words(filename, keyword):
             # Find the folder with this publisher name
@@ -606,7 +596,7 @@ def find_exact_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dic
     Rule 3a: Find exact series name match in destination (case-insensitive).
     Returns a match if dest entry has a folder OR loose files in base dir.
     Does NOT count files_in_folders alone — those belong to a different series'
-    folder and fuzzy matching will find the correct parent folder instead.
+    folder, so counting them would match the wrong parent.
     Also tries normalized comparison (strips 'The', etc.) as a second pass.
     Returns: (matched_series_name, match_data) or None
     """
@@ -629,46 +619,18 @@ def find_exact_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dic
     return None
 
 
-def find_fuzzy_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dict]]:
-    """
-    Rule 3b: Find fuzzy series match in destination.
-    - Only if src_series > 5 characters
-    - Check if src appears in dest or vice versa
-    - Dest series must be > 3 characters
-    - Dest entry must have an actual folder (not just stray files)
-    - Prefer folder matches over file-only matches
-    Returns: (matched_series_name, match_data) or None
-    """
-    if len(src_series) <= 5:
-        return None
-
-    src_lower = src_series.lower()
-
-    folder_match = None   # Best match that has a folder
-    file_match = None     # Fallback match with only loose files
-
-    for dest_series, dest_data in dest_map.items():
-        if len(dest_series) <= 3:
-            continue
-
-        # Skip exact self-match (same series name shouldn't fuzzy-match itself)
-        if dest_series == src_series:
-            continue
-
-        dest_lower = dest_series.lower()
-
-        # Check if one contains the other (substring match)
-        if src_lower in dest_lower or dest_lower in src_lower:
-            has_folder = bool(dest_data.get("folders"))
-            has_files = bool(dest_data.get("files_in_folders") or dest_data.get("loose_files"))
-
-            if has_folder and folder_match is None:
-                folder_match = (dest_series, dest_data)
-            elif has_files and file_match is None:
-                file_match = (dest_series, dest_data)
-
-    # Prefer folder matches
-    return folder_match or file_match or None
+# REMOVED: find_fuzzy_match(). It was defined but never called, and its FUZZY
+# confidence value was therefore unreachable everywhere it was handled.
+#
+# It matched with `src_lower in dest_lower or dest_lower in src_lower` — a bare
+# substring test, the same technique that made 'Sleep' collect 'Sleeper Book 01'
+# and 'Odin' collect 'A. Rodin'. Requirement O4 settles that this tool never
+# fuzzy-matches: a false positive silently files a comic into the wrong series,
+# which is worse than not matching it at all.
+#
+# Do not reintroduce this. If matching needs to be more forgiving, make the
+# PARSER better (prototype/parse_release.py) rather than making the COMPARISON
+# looser.
 
 
 def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Optional[str], Optional[Dict], str]:
@@ -773,8 +735,6 @@ def generate_consolidation_strategy(
             consolidation_strategy += " (specific series folder match)"
         elif confidence == "PUBLISHER":
             consolidation_strategy += " (publisher folder match)"
-        elif confidence == "FUZZY":
-            consolidation_strategy += " (fuzzy match)"
 
         total_matches = num_files_in_folders + num_loose_files + num_folders
         has_files = "YES" if (num_files_in_folders + num_loose_files) > 0 else "NO"
@@ -800,9 +760,6 @@ def generate_consolidation_strategy(
         consolidation_strategy = f"Create /{src_series}/ folder and move left file + {num_loose_files} loose right file(s) into it"
         action_type = "CREATE_FOLDER_WITH_FILES"
         dest_folder = f"/{src_series}/"
-
-        if confidence == "FUZZY":
-            consolidation_strategy += " (fuzzy match)"
 
         return {
             "Left Panel File": src_filename,
@@ -901,7 +858,6 @@ def main():
     create_folder_with_files_count = 0
     copy_to_base_count = 0
     exact_matches = 0
-    fuzzy_matches = 0
 
     # STEP 1: Process all folders (with or without matches)
     print("📁 Processing subfolders...")
@@ -1045,8 +1001,6 @@ def main():
 
             if confidence in ["EXACT", "SPECIFIC_SERIES", "PUBLISHER"]:
                 exact_matches += 1
-            elif confidence == "FUZZY":
-                fuzzy_matches += 1
 
             # Add folder info if file is in a subfolder
             file_parent = None
@@ -1112,8 +1066,7 @@ def main():
     print(f"  → CREATE_FOLDER_WITH_FILES (create folder + move files): {create_folder_with_files_count}")
     print(f"  → COPY_TO_BASE (copy to base Comics folder): {copy_to_base_count}")
     print(f"\nMatch Quality:")
-    print(f"  → Exact/Substring Matches: {exact_matches}")
-    print(f"  → Fuzzy Matches: {fuzzy_matches}")
+    print(f"  → Matches: {exact_matches}")
     print(f"\nRight Panel (Destination):")
     print(f"  → Total unique series: {len(dest_map)}")
     print("=" * 80 + "\n")

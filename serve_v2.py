@@ -338,7 +338,11 @@ def main():
     print(f"   To stop: Press Ctrl+C\n")
     print("=" * 80 + "\n")
 
-    server = HTTPServer(("localhost", PORT), ComicOrganizerV2Handler)
+    # Bind the literal loopback address, not the hostname. "localhost" goes
+    # through name resolution and can be remapped in /etc/hosts or resolve to
+    # ::1, so what it ends up bound to is not guaranteed. comic_volume_creator
+    # already binds '127.0.0.1'; this aligns the two.
+    server = HTTPServer(("127.0.0.1", PORT), ComicOrganizerV2Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

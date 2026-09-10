@@ -110,7 +110,8 @@ def main():
     print(f"   To stop: Press Ctrl+C\n")
     print("=" * 80 + "\n")
 
-    server = HTTPServer(("localhost", PORT), ComicOrganizerHandler)
+    # Bind the literal loopback address, not the hostname — see serve_v2.py.
+    server = HTTPServer(("127.0.0.1", PORT), ComicOrganizerHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
