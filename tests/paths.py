@@ -22,6 +22,14 @@ def load_generator():
     return matching_analysis_generator
 
 
+def load_mover():
+    """Import comic_mover. Safe: it is guarded by __main__."""
+    if GENERATOR_DIR not in sys.path:
+        sys.path.insert(0, GENERATOR_DIR)
+    import comic_mover
+    return comic_mover
+
+
 def load_creator():
     """Import comic_volume_creator_server, or return None if it is not present.
 

@@ -104,22 +104,21 @@ def read_csv() -> List[Dict]:
                 rows.append(row)
     return rows
 
-def find_loose_right_files(series_name: str) -> List[Path]:
-    """
-    Find loose comic files in base Comics directory matching this series.
-    Only looks for .cbz and .cbr files.
-    Example: /mnt/extramedia/Comics/Feral 019.cbr
-    """
-    clean = series_name.split('(')[0].strip()
-    search_term = clean.lower() if clean else series_name.lower()
-    result = []
+def loose_right_files(row: Dict[str, str]) -> List[Path]:
+    """Loose library-root files the generator says belong with this series.
 
-    for item in DEST_DIR.iterdir():
-        if item.is_file() and item.suffix.lower() in {'.cbz', '.cbr'}:
-            if search_term in item.name.lower():
-                result.append(item)
+    Reads the 'Right Loose Files' column verbatim. The generator already worked
+    this out from its own destination scan (matching_analysis_generator.py:987),
+    so the mover has no business deriving it a second time.
 
-    return result
+    This replaces find_loose_right_files(), which searched the library root with
+    `if search_term in item.name.lower()` — a bare substring test. It collected
+    any file whose name merely CONTAINED the series name: folder 'Sleep' took
+    'Sleeper Book 01', 'Flow' took 'Sunflower', 'Odin' took 'A. Rodin'. An audit
+    of the library found 18 comics misfiled that way.
+    """
+    raw = row.get('Right Loose Files', '').strip()
+    return [DEST_DIR / name.strip() for name in raw.split('|') if name.strip()]
 
 def find_right_panel_folder(dest_folder_name: str) -> Optional[Path]:
     """Find existing folder for this series destination."""
@@ -193,15 +192,11 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
 
             # For CREATE_FOLDER_FROM_FOLDER also move loose right files into new folder
             if action == "CREATE_FOLDER_FROM_FOLDER":
-                right_loose_str = row.get('Right Loose Files', '').strip()
-                if right_loose_str:
-                    right_filenames = [f.strip() for f in right_loose_str.split('|') if f.strip()]
-                    for rf_name in right_filenames:
-                        src_right = DEST_DIR / rf_name
-                        if src_right.exists():
-                            op.add_move(src_right, dest_folder_path / rf_name, "FILE")
-                        else:
-                            print(f"   ⚠️  Right loose file not found: {src_right}")
+                for src_right in loose_right_files(row):
+                    if src_right.exists():
+                        op.add_move(src_right, dest_folder_path / src_right.name, "FILE")
+                    else:
+                        print(f"   ⚠️  Right loose file not found: {src_right}")
 
             # Store source subfolder for cleanup after moves
             op.source_subfolder = src_subfolder
@@ -236,9 +231,11 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
 
         # Handle right files if present
         if action in ["CONSOLIDATE", "CREATE_FOLDER_WITH_FILES"]:
-            loose_files = find_loose_right_files(series)
-            for rf in loose_files:
-                op.add_move(rf, dest_folder_path / rf.name, "FILE")
+            for rf in loose_right_files(row):
+                if rf.exists():
+                    op.add_move(rf, dest_folder_path / rf.name, "FILE")
+                else:
+                    print(f"   ⚠️  Right loose file not found: {rf}")
 
         operations.append(op)
 
