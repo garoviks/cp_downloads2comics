@@ -530,6 +530,35 @@ def scan_destination_directory() -> Dict[str, Dict]:
 # MATCHING LOGIC
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _words(text: str) -> str:
+    """Reduce text to space-delimited lowercase words, padded with spaces.
+
+    'Superman_Isnt_Jewish_(2018)_(Humanoids)' -> ' superman isnt jewish 2018 humanoids '
+
+    Every separator — space, underscore, dash, dot, bracket, ampersand — collapses
+    to a single space, so the padded result can be searched for ' word ' to get a
+    whole-word test without any regex boundary logic at the call site.
+    """
+    return ' %s ' % ' '.join(re.findall(r'[a-z0-9]+', text.lower()))
+
+
+def contains_words(text: str, phrase: str) -> bool:
+    """True if every word of `phrase` appears in `text`, in order, as whole words.
+
+    This replaces `phrase.lower() in text.lower()`, which matched inside words:
+    'Soleil' matched 'Beausoleil' and 'SAF' matched 'Failsafe', sending those
+    files into a publisher folder they have nothing to do with.
+
+    Tokenising rather than adding regex boundaries is deliberate. The boundary
+    conditions here are exactly the ones \\b gets wrong on release filenames
+    (underscores) and the ones lookarounds make unreadable. Splitting into words
+    once and comparing words states the intent directly.
+    """
+    if not text or not phrase:
+        return False
+    return _words(phrase).strip().join((' ', ' ')) in _words(text)
+
+
 def find_specific_series_match(filename: str, dest_map: Dict) -> Optional[Tuple[str, Dict, str]]:
     """
     Rule 1: Check if filename contains a specific series folder name (exact match).
@@ -537,10 +566,10 @@ def find_specific_series_match(filename: str, dest_map: Dict) -> Optional[Tuple[
     Example: "Billy & Buddy v10..." → finds "Billy & Buddy 001-008 (2009-2019)"
     """
     for specific_folder in SPECIFIC_SERIES_FOLDERS:
-        if specific_folder.lower() in filename.lower():
+        if contains_words(filename, specific_folder):
             # Find the actual folder in destination
             for dest_folder, dest_data in dest_map.items():
-                if specific_folder.lower() in dest_folder.lower():
+                if contains_words(dest_folder, specific_folder):
                     return (dest_folder, dest_data, "SPECIFIC_SERIES")
     return None
 
@@ -559,11 +588,15 @@ def find_publisher_match(filename: str, dest_map: Dict) -> Optional[Tuple[str, D
         "Cinebook", "Fantagraphics", "Humanoids", "Soleil", "SAF"
     }
 
+    # NOTE: this inline set duplicates PUBLISHER_FOLDERS (:77), which is declared
+    # and never read. The two have already drifted — PUBLISHER_FOLDERS also lists
+    # 'Europe Comics (Collection)'. Reconciling them changes which files match, so
+    # it is a behaviour decision, not part of this fix.
     for keyword in publisher_keywords:
-        if keyword.lower() in filename.lower():
+        if contains_words(filename, keyword):
             # Find the folder with this publisher name
             for dest_folder, dest_data in dest_map.items():
-                if keyword.lower() in dest_folder.lower():
+                if contains_words(dest_folder, keyword):
                     return (dest_folder, dest_data, "PUBLISHER")
     return None
 
