@@ -186,7 +186,7 @@ the Status column were decided by you, not read off the code — see §8.4 for e
 | V5 | Delete sources after a successful merge — irreversible, accepted | settled |
 | V6 | Confine all writes to `ALLOWED_ROOT` | implemented |
 | V7 | Persist exclusions to `.comic_exclusions.md` | implemented |
-| V8 | ~~Optionally enrich with Metron metadata + `ComicInfo.xml`~~ | **to be REMOVED — settled §8.4 Q5**; scope statement wins |
+| V8 | ~~Optionally enrich with Metron metadata + `ComicInfo.xml`~~ | **REMOVED 2026-09-11** — settled §8.4 Q5, verified §10.4; scope statement wins |
 | V9 | Volume year = earliest of the issues | implemented — **docs say highest** |
 
 ---
@@ -769,16 +769,18 @@ below is started.**
 | **1** ✅ done | Build `parse_release()` **alongside** production code; change nothing | 21 prototype tests green; whole-library compare shows 0 dangerous merges |
 | **2** ✅ done | Answer Q1–Q7 | recorded in §8.4 |
 | **3** ✅ done | Confine the Organiser's writes (Q7i) | 50 tests green; real CSV plans identically, 0 rows rejected |
-| **3b** | Align loopback binding: `serve_v2.py:341` `"localhost"` → `'127.0.0.1'` (N3) | one line |
+| **3b** ✅ done | Align loopback binding: `serve_v2.py` + `serve.py` `"localhost"` → `'127.0.0.1'` (N3) | both bind the literal address |
+| **8** ✅ done | Remove Metron enrichment (Q5): `enrich_cbz`, `inject_comicinfo_into_cbz`, `/api/metron-search`, credentials on `/api/create`, the settings panel | see §10.4 |
+| **9** ✅ done | Delete dead code (§7.5) | CSV byte-identical; 50 tests green |
 | **4** | Extract the shared module; both apps import it, behaviour frozen | Byte-identical CSV; no file vanishes from the Builder UI |
 | **5** | Switch the Organiser to read `Release` fields | CSV diff explained row by row |
 | **6** | Switch the Builder's `is_volume`/`extract_series` | Visible-file count before/after |
 | **7** | Apply the remaining decisions: O14 most-specific-wins, O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections | Per-decision test cases + one-time migration |
-| **8** | Remove Metron enrichment (Q5): `enrich_cbz`, `inject_comicinfo_into_cbz`, `/api/metron-search`, credentials on `/api/create` | Merge path unchanged; existing `ComicInfo.xml` in archives untouched |
-| **9** | Delete dead code (§7.5) | Test suite green |
 
-Step 3 moved ahead of the shared-module work because Q7 settled it as a defect, and it
-touches no code the refactor depends on.
+Steps 3, 3b, 8 and 9 were pulled ahead of the shared-module work and the table reordered
+to match. Each is self-contained and touches no code the refactor depends on: 3 and 3b
+are defects Q7/N3 settled, 8 deletes a feature outright, 9 deletes code nothing calls.
+Doing them first shrinks the surface step 4 has to move.
 
 **Non-negotiable invariant throughout:** no two previously-distinct series keys may
 **merge**. Splitting is allowed — that is un-corruption. Merging silently moves comics
@@ -891,7 +893,50 @@ most specific one. The rule adopted, which splits by what the name *is*:
 17 folders are named `... (Collection)`, `... (TPBs)` and similar. Q1 settled that issues
 and collections share one folder, so routing a single issue into `100 Bullets (TPBs)` is
 consistent with the decision — but the *folder name* then misdescribes its contents. This
-is a library-naming question for you, not something the code should decide.
+is a library-naming question, not something the code should decide.
+
+**Decided 2026-09-11: leave them exactly as they are.** No rename, and no special-casing
+of the `(Collection)` / `(TPBs)` suffix in the parser. Closed — do not re-raise.
+
+### 10.4 Verification of the Metron removal (step 8)
+
+Q5 removes a feature from the Builder, whose `/api/create` is **destructive** — V5 deletes
+the source files after a successful merge. So the bar was not "does it still start" but
+"is the merge path provably the same code".
+
+**Proof it was untouched, rather than an assertion that it was.** Each function was
+extracted by AST from `git show HEAD:` and from the working tree and SHA-256'd. All six
+identical, including the 120-line merge function:
+
+| Function | Lines | HEAD vs working tree |
+|---|---|---|
+| `create_cbz_direct` — **the destructive path** | 120 | `3d5750b5…` identical |
+| `extract_issue_number` | 10 | identical |
+| `scan_root` | 104 | identical |
+| `write_exclusions` | 14 | identical |
+| `resolve_under_root` | 20 | identical |
+| `is_plain_name` | 15 | identical |
+
+**End-to-end run against a throwaway root**, server started with `--root` at a tempdir
+holding three real CBZs, one of which carried a pre-existing `ComicInfo.xml`:
+
+1. `/api/scan` grouped all three and proposed `Test Series v01` — unchanged.
+2. `/api/metron-search` → **HTTP 404**, endpoint gone.
+3. `/api/create` → `success: true`, all six stages logged, sources deleted, volume built.
+4. **The pre-existing `ComicInfo.xml` survived byte-for-byte** (`PRESERVE ME` still in it).
+   This is the promise made in Q5: removal deletes the code that *writes* metadata, never
+   metadata already in the library.
+5. Confinement still refuses `/tmp` with the 403 from step 3 — the removal did not disturb
+   the write-safety check that sits in the same handler.
+
+**One thing the removal had to fix rather than merely delete.** The old settings panel
+stored a Metron password in browser `localStorage` **in plain text**, and the only "Clear"
+button lived in the panel being deleted. Deleting the feature would have stranded the
+credential with no way to reach it, so the page now removes `mc_username`, `mc_password`
+and `mc_auto_enrich` on load.
+
+`metron_client.py` is left in the repo, unimported. Deleting it is a separate decision;
+it costs nothing and is the only record of the API shape if this is ever wanted back.
 
 ---
 
