@@ -120,10 +120,62 @@ def loose_right_files(row: Dict[str, str]) -> List[Path]:
     raw = row.get('Right Loose Files', '').strip()
     return [DEST_DIR / name.strip() for name in raw.split('|') if name.strip()]
 
+def resolve_under_dest(dest_folder_name: str) -> Optional[Path]:
+    """Join a CSV folder name onto DEST_DIR, but only if it stays inside it.
+
+    'Suggested Folder Name' is not a trusted string: comic_mover.py:489-492 copies
+    it straight out of the overrides JSON with no validation, and the only guard
+    was `.strip('/')`. That neutralises an absolute path but does nothing about
+    '..', so a bad override escaped the library entirely:
+
+        'Sandman'            -> /mnt/extramedia/Comics/Sandman        ok
+        '/etc/cron.d'        -> /mnt/extramedia/Comics/etc/cron.d     ok, neutralised
+        '../../../tmp/pwned' -> /tmp/pwned                            ESCAPED
+
+    mkdir(parents=True, exist_ok=True) then created it silently. This is a
+    single-user loopback tool, so the realistic cause is a typo or a malformed
+    CSV cell rather than an attacker — but the result is the same and the Volume
+    Builder has guarded this since it was written (resolve_under_root).
+
+    resolve() collapses '..' and follows symlinks BEFORE the comparison. The
+    trailing os.sep matters: a bare startswith() would also accept a sibling
+    directory whose name merely begins with the root, e.g. '/mnt/extramedia/ComicsOld'.
+
+    Returns None if the name escapes; callers skip the row rather than guessing.
+    """
+    if not dest_folder_name:
+        return None
+    try:
+        real = Path(os.path.realpath(DEST_DIR / dest_folder_name.strip('/')))
+        root = Path(os.path.realpath(DEST_DIR))
+    except OSError:
+        return None
+    if real == root or str(real).startswith(str(root) + os.sep):
+        return real
+    return None
+
+
+def is_plain_name(name: str) -> bool:
+    """True only for a bare filename with no path component.
+
+    Guards 'Proposed Filename' and 'Proposed Files Details', which reach a move
+    destination the same unvalidated way (:494). Rejects '..', '/etc/passwd',
+    'a/b', '' and '.'.
+    """
+    return (
+        bool(name)
+        and name not in ('.', '..')
+        and not os.path.isabs(name)
+        and os.path.basename(name) == name
+        and os.sep not in name
+        and (os.altsep is None or os.altsep not in name)
+    )
+
+
 def find_right_panel_folder(dest_folder_name: str) -> Optional[Path]:
     """Find existing folder for this series destination."""
-    dest_path = DEST_DIR / dest_folder_name.strip('/')
-    if dest_path.exists() and dest_path.is_dir():
+    dest_path = resolve_under_dest(dest_folder_name)
+    if dest_path and dest_path.exists() and dest_path.is_dir():
         return dest_path
     return None
 
@@ -179,12 +231,19 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
                     rename_map[orig] = proposed_names[i]
 
             # Determine destination folder
-            dest_folder_path = DEST_DIR / dest_folder.strip('/')
+            dest_folder_path = resolve_under_dest(dest_folder)
+            if dest_folder_path is None:
+                op.skipped_reason = f"Destination escapes the library: {dest_folder!r}"
+                operations.append(op)
+                continue
 
             # Add a move for each left file (flattened — use proposed name if available)
             for filename in filenames:
                 src_file = src_subfolder / filename
                 dst_name = rename_map.get(filename, filename)
+                if not is_plain_name(dst_name):
+                    print(f"   ⚠️  Rejected proposed filename with a path component: {dst_name!r}")
+                    continue
                 if src_file.exists():
                     op.add_move(src_file, dest_folder_path / dst_name, "FILE")
                 else:
@@ -221,12 +280,16 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
         if action == "COPY_TO_BASE" and dest_folder == "/":
             dest_folder_path = DEST_DIR
         else:
-            dest_folder_path = DEST_DIR / dest_folder.strip('/')
+            dest_folder_path = resolve_under_dest(dest_folder)
+            if dest_folder_path is None:
+                op.skipped_reason = f"Destination escapes the library: {dest_folder!r}"
+                operations.append(op)
+                continue
 
         # Add move for left panel file — use proposed filename if set (auto-rename)
         filename = Path(left_file).name
         proposed = row.get('Proposed Filename', '').strip()
-        dst_name = proposed if proposed else filename
+        dst_name = proposed if proposed and is_plain_name(proposed) else filename
         op.add_move(src_file, dest_folder_path / dst_name, "FILE")
 
         # Handle right files if present
@@ -301,8 +364,14 @@ def execute_moves(operations: List[MoveOperation], dry_run: bool = False) -> boo
             print(f"⏭️  [{op.series_name}] Skipped")
             continue
 
-        # Ensure destination folder exists
-        dest_folder = DEST_DIR / op.dest_folder.strip('/')
+        # Ensure destination folder exists. Re-checked here rather than trusted
+        # from plan_moves(): this is the line that actually creates directories,
+        # so it is the one that must not be reachable with an escaping path.
+        dest_folder = resolve_under_dest(op.dest_folder)
+        if dest_folder is None:
+            print(f"⏭️  [{op.series_name}] Skipped — destination escapes the library: {op.dest_folder!r}")
+            errors.append((op.series_name, f"destination escapes the library: {op.dest_folder!r}"))
+            continue
         if not dry_run:
             dest_folder.mkdir(parents=True, exist_ok=True)
             print(f"📁 Created folder: {dest_folder}")
