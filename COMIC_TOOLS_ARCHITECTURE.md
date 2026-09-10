@@ -831,11 +831,75 @@ test. Re-matching all 18 with the fixed logic:
 
 The fix is confirmed against the exact data that exposed the bug.
 
+### 10.3 Validation of the matcher against 92 real releases
+
+`prototype/match_downloads.py`. Read-only. This closes the evidence gap flagged in the
+original plan: name *parsing* had been tested, the *matcher* against real folders had not.
+
+| | live | prototype |
+|---|---|---|
+| matched to an existing series | 55 of 92 | **56** of 92 |
+| **matched by live but NOT by the prototype** | — | **0** |
+| agree on the series chosen | — | **88 of 92** |
+
+**Zero regressions.** No file that live places today becomes homeless under the prototype.
+All four disagreements are below, with what is actually on disk:
+
+| Release | live | prototype | verdict |
+|---|---|---|---|
+| `Heartthrob Season 3 001` | `NONE` | `Heartthrob (2016)` ✅ folder exists | **prototype** — this is the outstanding issue in the appendix |
+| `Ghost Machine - The Official Guidebook 05` | `Ghost Machine` (no such folder) | `Ghost Machine - The Official Guidebook` ✅ folder exists | **prototype** — Q2 most-specific-wins |
+| `Invincible Universe - Battle Beast 011` | `Invincible Universe` (no such folder) | `Invincible Universe - Battle Beast` ✅ folder exists | **prototype** — Q2 most-specific-wins |
+| `Starhenge Book Two - a Kiss for Atticus 03` | `Starhenge Book Two - A Kiss For Atticus` | `Starhenge` | **judgement** — both are loose files, no folder. Under Q1 the prototype is right: Book One and Book Two are one series. |
+
+Q2 and Q3 are therefore confirmed against real data rather than invented examples: the two
+most-specific-wins cases both resolve to folders that genuinely exist, and **0 of 92 files
+route into a creator or event container.**
+
+#### Two harness bugs found on the way, both mine
+
+Recorded because each produced a confident, wrong number, and the same mistakes would
+distort step 4–6 verification:
+
+1. **Unequal universes.** The first run built the prototype's library from top-level
+   folder names only, while live's `find_exact_match():604` also accepts a match against a
+   *loose file* in the library root. Prototype scored 35 vs 55 — it looked much worse than
+   it is. Both sides must resolve against the same set.
+2. **Mixed normalisers.** The second run took the prototype's library keys from live's
+   `dest_map`, whose keys live derived with its own corrupted extractor.
+   `Giant Robot Hellboy Returns` is a loose file that live corrupts *identically on both
+   sides* to `Robot Hellboy Returns`, so it matches itself; the prototype read the incoming
+   file correctly and then found no such key. That is a harness artefact, not a parser
+   defect. Each side must derive library keys with its own parser.
+
+Both were caught by checking *why* a number came out, not by the number looking wrong.
+
+#### One real prototype fix it produced
+
+`Cindy and Biscuit` failed to match the loose `Cindy and Biscuit - We Love Trouble.cbz`.
+`parse_release()` was already returning both candidates; the index was only storing the
+most specific one. The rule adopted, which splits by what the name *is*:
+
+- a **folder** indexes under its full name only — the folder name is a deliberate choice,
+  so `Ghost Machine - The Official Guidebook` must not also answer to `Ghost Machine`, or
+  an unrelated `Ghost Machine 001` gets swept into the guidebook;
+- a **loose file** indexes under *every* candidate — no folder exists yet, and grouping is
+  the entire point.
+
+#### Observation, not a defect
+
+17 folders are named `... (Collection)`, `... (TPBs)` and similar. Q1 settled that issues
+and collections share one folder, so routing a single issue into `100 Bullets (TPBs)` is
+consistent with the decision — but the *folder name* then misdescribes its contents. This
+is a library-naming question for you, not something the code should decide.
+
 ---
 
 ## Appendix — outstanding items not scheduled
 
-- `Heartthrob Season 3 001` → `Heartthrob Season`; you want `Heartthrob`. `ISSUE_PATTERN` question.
+- ~~`Heartthrob Season 3 001` → `Heartthrob Season`; you want `Heartthrob`.~~ **Solved by
+  the prototype** — it routes to the real `Heartthrob (2016)` folder where live matches
+  nothing (§10.3). Lands whenever step 5 switches the Organiser over.
 - `2000AD` and `2000AD - Collections␣` already share a `series_map` key today, independent
   of any regex change. Your `2000AD_Collections` rename fixes it with no code change — but
   the rename must also update the `## Skipped Folders` entry, whose real folder name ends
