@@ -6,8 +6,9 @@ Scope: `cp_downloads2comics` (the **Organiser**) and `comic_volume_creator` (the
 > **Covers both apps; stored in the `cp_downloads2comics` repo.** That is a storage
 > decision, not an ownership one. `comic_volume_creator` is a separate repository and the
 > requirements recorded here — V1–V9, and the §8.4 Q5 Metron removal — bind it just as
-> much. It lives here because the Phase 1 work and the test harness already do. If the
-> shared module in §8.3 is ever extracted into its own repo, this document moves with it.
+> much. It lives here because the Phase 1 work and the test harness already do — and as of
+> O18 (§8.5) that is also where the shared parser lives permanently, so this document and
+> the code it describes stay together.
 
 Status: **reviewed.** Sections 1–7 describe what is true today and are evidence-backed.
 Sections 8–10 are proposals. The seven open questions were **answered on 2026-09-10 and
@@ -174,6 +175,7 @@ the Status column were decided by you, not read off the code — see §8.4 for e
 | O15 | Confine all writes to the library root | **implemented** — `resolve_under_dest`/`is_plain_name`, §5.2 |
 | O16 | Never auto-file into creator or event containers; publisher containers are fine | **settled §8.4 Q3** — not implemented |
 | O17 | The library root is a parameter, not a constant | **settled §8.4 Q6** — Builder yes, Organiser no (`:58-59`) |
+| O18 | The Organiser owns the parser; the Builder imports it from the sibling repo | **settled 2026-09-11** — §8.5, no third repo |
 
 ### 3.2 Volume Builder
 
@@ -571,6 +573,9 @@ two consumers, which is the pattern that worked for `Right Loose Files`.
 
 The boundary is: **share what a filename *means*; keep private what each app *does about it*.**
 
+This table says *what* to share. **§8.5 (O18) answers where it lives** — and finds that
+only the first row is shareable without a behaviour change.
+
 ### 8.4 Decisions — answered 2026-09-10
 
 **All seven are now settled.** Four were settled on the first answer. Three needed a
@@ -756,6 +761,51 @@ issue: `.comic_exclusions.md` stores absolute paths in two sections and bare bas
 not a reliable identity. **Adopted: absolute paths in all three sections**, with a one-time
 migration converting existing basename entries. Your preference and the evidence agree.
 
+### 8.5 O18 — where the shared code lives, and why step 4 moves none of it
+
+The table above says *what* to share. It never said *where it lives*, and that is a
+separate question because the two apps are **separate git repos**, siblings under
+`~/scripts/`, both launched by `launch.sh` under plain system `python3` with no venv.
+
+**Decided 2026-09-11: the Organiser keeps `release.py`; the Builder imports it from the
+sibling.** No third repo, no install step. The cost accepted knowingly: the Builder gains
+a dependency on a repo it does not own, so cloning the Builder alone will not run until
+the Organiser is beside it. Rejected alternatives were a new `comiclib/` repo (a third
+thing to commit and back up) and `pip install -e` into user site-packages (an install step
+that must be repeated per machine, and which fails *silently* into stale code).
+
+#### Step 4 shrinks to this decision, because three of the four cannot move
+
+Step 4's verification is **"behaviour frozen"**. Measured against that bar, only one of
+§8.3's four candidates is actually a move:
+
+| Candidate | Verdict at step 4 |
+|---|---|
+| `Release`, `parse_release()`, `normalize()` | **already where it belongs.** The Organiser imports it today; under O18 it does not move at all |
+| `COMIC_EXTS` | **cannot.** Drifted — the Organiser has `.zip`/`.rar`, the Builder does not. Unifying makes **3 real files appear** in the Builder UI (`Les Vagabond des Limbes` ×2, `Aster Blistok`). "No file vanishes" does not cover files arriving |
+| `VOLUME_PATTERN` | **cannot.** Word lists drifted by `Scanlation\|Annual\|Special\|Giant`. Unifying changes `is_volume()` — that is step 6 by definition |
+| `resolve_under_root` | **cannot.** Not the same function: the Builder's takes a full path → `str\|None`; the Organiser's `resolve_under_dest` takes a folder *name* → `Path\|None`. Merging is a redesign, not an extraction |
+
+So step 4 is closed as a **decision with no code change**, rather than widened until it
+had something to do. Unifying `COMIC_EXTS` is now a step-7 decision in its own right,
+because 3 files appearing is a user-visible change that deserves to be chosen.
+
+#### Two hazards checked now so step 6 does not trip on them
+
+1. **No module-name collision, verified.** Putting the Organiser's directory on the
+   Builder's path makes *all five* of its top-level modules importable
+   (`comic_mover`, `matching_analysis_generator`, `release`, `serve`, `serve_v2`).
+   None collides with the Builder's own `comic_volume_creator_server` / `metron_client`,
+   and the Builder imports nothing but stdlib. Use `sys.path.append()`, **not**
+   `insert(0, …)` — appending keeps the Builder's own directory first, so a future
+   Organiser file cannot shadow a Builder module.
+2. **`release.py` is safe to import.** Stdlib only (`re`, `dataclasses`), no filesystem
+   access at import time, `__main__` guarded. The Builder inherits no scan and no
+   library dependency by importing it.
+3. **Do not import `COMIC_EXTS` from it.** `release.py` carries the *Organiser's* set,
+   including `.zip`/`.rar`. Taking it along with the parser at step 6 would smuggle in the
+   widening that this section just deferred.
+
 ---
 
 ## 9. Migration path
@@ -772,9 +822,9 @@ Incremental, each step independently verifiable, Phase 1's harness as the net.
 | **8** ✅ done | Remove Metron enrichment (Q5): `enrich_cbz`, `inject_comicinfo_into_cbz`, `/api/metron-search`, credentials on `/api/create`, the settings panel | see §10.4 |
 | **9** ✅ done | Delete dead code (§7.5) | CSV byte-identical; 50 tests green |
 | **5** ✅ done | Switch the Organiser to read `Release` fields (and O14, pulled forward) | see §10.5 |
-| **4** | Extract the shared module; both apps import it, behaviour frozen | Byte-identical CSV; no file vanishes from the Builder UI |
-| **6** | Switch the Builder's `is_volume`/`extract_series` | Visible-file count before/after |
-| **7** | Apply the remaining decisions: ~~O14~~ (landed in step 5), O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections | Per-decision test cases + one-time migration |
+| **4** ✅ closed | ~~Extract the shared module~~ → **O18: the Organiser keeps it, the Builder imports the sibling.** No code moves | see §8.5 — three of the four candidates cannot move at frozen behaviour |
+| **6** | Switch the Builder's `is_volume`/`extract_series` to `parse_release` (`sys.path.append`, **not** `insert(0,…)`) | Visible-file count before/after |
+| **7** | Apply the remaining decisions: ~~O14~~ (landed in step 5), O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections, **and whether to unify `COMIC_EXTS`** (3 files would appear in the Builder UI) | Per-decision test cases + one-time migration |
 
 Steps 3, 3b, 8 and 9 were pulled ahead of the shared-module work and the table reordered
 to match. Each is self-contained and touches no code the refactor depends on: 3 and 3b
@@ -790,6 +840,14 @@ both callers already proven against the real library. **O14 was pulled forward i
 as well** — the candidate-aware index made one destination key (`Sleeper`) newly ambiguous,
 and shipping a known instance of a problem with a scheduled fix is worse than doing the
 fix now. §10.5 has the measurement.
+
+**Then step 4 turned out to have nothing left to do.** Taking 5 first was supposed to
+reduce step 4 to a byte-identical file move; answering the ownership question (O18, §8.5)
+reduced it to zero, because the Organiser keeps the parser and the Builder reaches for the
+sibling at step 6. Measuring the other three shared-module candidates against step 4's own
+"behaviour frozen" bar then showed none of them *can* move there. Closed as a decision
+rather than widened until it had work in it — the alternative was unifying `COMIC_EXTS`
+and `VOLUME_PATTERN` under a step whose verification explicitly forbids behaviour change.
 
 **Non-negotiable invariant throughout:** no two previously-distinct series keys may
 **merge**. Splitting is allowed — that is un-corruption. Merging silently moves comics
