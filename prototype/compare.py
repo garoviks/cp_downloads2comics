@@ -10,6 +10,10 @@ not. It is the Phase 1 safety question:
 Splitting is safe (it is un-corruption). Merging silently files comics into the
 wrong folder, so a single merge is a blocker.
 
+NOTE: what this calls "the prototype" is now `../release.py` — promoted after this
+script reported a clean verdict. It is kept, unrenamed, because it is the evidence
+that promotion rested on and must still reproduce that verdict on demand.
+
 Run:  python3 compare.py
 """
 import collections
@@ -22,7 +26,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 import matching_analysis_generator as live      # noqa: E402
-import parse_release as proto                   # noqa: E402
+import release as proto                        # noqa: E402
 
 ROOT = '/mnt/extramedia/Comics'
 EXTS = {'.cbz', '.cbr', '.zip', '.rar'}

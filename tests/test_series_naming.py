@@ -64,34 +64,54 @@ class TestMidWordCorruption(unittest.TestCase):
                          'black canary ignite')
 
     def test_gn_as_suffix_of_ogn(self):
-        # 'OGN' is a packaging word we do NOT strip; 'O' + 'GN' must not be split.
-        self.check('Camp Midnight OGN', 'Camp Midnight OGN')
+        # What this guards is that 'OGN' is never SPLIT into 'O' + 'GN' — the
+        # Phase 1 bug, which produced 'Camp Midnight O'.
+        #
+        # The two call sites now answer differently, and both are right.
+        # extract_series_name() parses a RELEASE, where OGN (Original Graphic
+        # Novel) is packaging, so it is consumed whole and 'Camp Midnight' is the
+        # series — which is also the real folder name in the library.
+        # extract_folder_series_name() reads a FOLDER, whose name you chose, so it
+        # keeps what you wrote.
+        self.assertEqual(gen.extract_series_name('Camp Midnight OGN'), 'Camp Midnight')
+        self.assertEqual(gen.extract_folder_series_name('Camp Midnight OGN'),
+                         'Camp Midnight OGN')
 
     def test_volume_number_still_stripped_alongside(self):
-        self.check('Camp Midnight v01 OGN', 'Camp Midnight OGN')
+        self.assertEqual(gen.extract_series_name('Camp Midnight v01 OGN'), 'Camp Midnight')
+        self.assertEqual(gen.extract_folder_series_name('Camp Midnight v01 OGN'),
+                         'Camp Midnight OGN')
 
     def test_vol_dot_n(self):
         self.check('Tales Designed to Thrizzle Vol. 1', 'Tales Designed to Thrizzle')
 
 
 class TestUnderscoreBoundaries(unittest.TestCase):
-    """Why the anchors are (?<![A-Za-z0-9])/(?![A-Za-z0-9]) and not \\b.
+    """Underscore-separated releases — the form `\\b` gets wrong.
 
-    `\\b` treats '_' as a word character, so it would refuse to match a keyword
-    that is underscore-delimited. Release filenames are full of underscores.
+    `\\b` treats '_' as a word character, so it refuses to match a keyword that is
+    underscore-delimited. Release filenames are full of underscores, which is why
+    VOLUME_PATTERN uses (?<![A-Za-z0-9])/(?![A-Za-z0-9]) instead, and why
+    release.py tokenises on '_' rather than relying on boundaries at all.
     """
 
-    def test_keyword_between_underscores_is_stripped(self):
-        # Plain \b anchors would leave 'Complete' in place here.
+    def test_underscores_become_word_separators(self):
+        # Both parsers see 'Complete' as a word here; neither leaves it glued.
+        # The old subtraction left the debris 'Nancy_In_Hell__Minutemen' — the
+        # double underscore is where the word was cut out of the middle.
+        #
+        # 'Minutemen' is a scanlation group, not part of the title, but it is
+        # underscore-joined and so indistinguishable from a title word. Recorded
+        # as a known limitation in tests/test_release.py, not a defect.
         self.assertEqual(gen.extract_series_name('Nancy_In_Hell_Complete_Minutemen'),
-                         'Nancy_In_Hell__Minutemen')
+                         'Nancy In Hell Complete Minutemen')
 
     def test_volume_number_followed_by_underscore_is_stripped(self):
-        # The stray trailing '_' is a pre-existing cosmetic artefact of the
-        # underscore-separated form, unrelated to anchoring and deliberately not
-        # in scope here. What this pins is that 'v01' is still removed.
-        self.assertEqual(gen.extract_series_name('Dead Irons v01_(2009)'),
-                         'Dead Irons _')
+        # The old code left a stray ' _' behind ('Dead Irons _') because it cut
+        # 'v01' out of the middle and the underscore that followed it survived.
+        # Consuming a suffix instead of subtracting a substring removes the whole
+        # class of artefact.
+        self.assertEqual(gen.extract_series_name('Dead Irons v01_(2009)'), 'Dead Irons')
 
 
 class TestPackagingWordsStillStrip(unittest.TestCase):
@@ -105,9 +125,35 @@ class TestPackagingWordsStillStrip(unittest.TestCase):
 
     def test_special_routes_to_parent(self):
         self.assertEqual(gen.extract_series_name('Misty Special'), 'Misty')
-        self.assertEqual(gen.extract_series_name('Wytches - Bad Egg Halloween Special'),
-                         'Wytches')
         self.assertEqual(gen.extract_series_name('Taboo 001-009 + Special'), 'Taboo')
+
+    def test_arc_special_offers_the_parent_as_a_candidate(self):
+        # 'Wytches - Bad Egg Halloween Special' used to derive 'Wytches' outright.
+        # It now offers both, most specific first, and the LIBRARY chooses: the
+        # arc folder if you made one, the parent otherwise. That is the whole
+        # point of returning candidates — the filename cannot know which exists.
+        self.assertEqual(
+            gen.extract_series_candidates('Wytches - Bad Egg Halloween Special'),
+            ('Wytches - Bad Egg Halloween', 'Wytches'))
+
+        # No 'Wytches - Bad Egg Halloween' folder -> falls through to the parent,
+        # i.e. exactly the old behaviour, but now for a stated reason.
+        dest = {'Wytches': {'folders': ['Wytches 001-006 (2014)'],
+                            'loose_files': [], 'files_in_folders': []}}
+        matched, _data, how = gen.find_matches(
+            'Wytches - Bad Egg Halloween Special (2015).cbz',
+            'Wytches - Bad Egg Halloween', dest)
+        self.assertEqual((matched, how), ('Wytches', 'EXACT'))
+
+    def test_arc_folder_beats_the_parent_when_it_exists(self):
+        dest = {
+            'Die': {'folders': ['Die 001-020'], 'loose_files': [], 'files_in_folders': []},
+            'Die - Loaded': {'folders': ['Die - Loaded'], 'loose_files': [],
+                             'files_in_folders': []},
+        }
+        matched, _data, how = gen.find_matches(
+            'Die - Loaded v01 - Zero Sessions (2026).cbz', 'Die - Loaded', dest)
+        self.assertEqual((matched, how), ('Die - Loaded', 'EXACT'))
 
     def test_collected_edition_words(self):
         self.assertEqual(gen.extract_series_name('Bone Parish Complete Collection'),
@@ -138,6 +184,114 @@ class TestProposeFilename(unittest.TestCase):
         # differently from the canonical name and aborted the rename.
         self.assertEqual(gen.extract_series_name('Signal to Noise 001 (2020).cbz'),
                          'Signal to Noise')
+
+
+class TestPickDestinationFolder(unittest.TestCase):
+    """Ten destination keys hold more than one folder. This decides between them.
+
+    'Sleeper' is the worst case and the reason the function exists: three real
+    folders, all deriving the key 'Sleeper', so before this the winner was
+    whichever one os.scandir returned first.
+    """
+
+    SLEEPER = [
+        'Sleeper 001-012 (2003-2004) (digital-Empire)',
+        'Sleeper - Season One 01-12 (2003) (digital) (Minutemen-Annika)',
+        'Sleeper - Season Two 001-012 (2004-2005) (digital-Empire)',
+    ]
+
+    def test_plain_issue_goes_to_the_plain_folder(self):
+        self.assertEqual(gen.pick_destination_folder('Sleeper 013 (2004).cbz', self.SLEEPER),
+                         'Sleeper 001-012 (2003-2004) (digital-Empire)')
+
+    def test_season_issue_goes_to_its_season(self):
+        for season in ('One', 'Two'):
+            with self.subTest(season=season):
+                got = gen.pick_destination_folder(
+                    f'Sleeper - Season {season} 013 (2004).cbz', self.SLEEPER)
+                self.assertIn(f'Season {season}', got)
+
+    def test_no_folder_is_named_so_the_choice_is_reproducible(self):
+        # Reachable through a PUBLISHER match, where the folder is not expected
+        # to appear in the filename. Arbitrary is fine; unstable is not — this
+        # string becomes a path.
+        pick = lambda: gen.pick_destination_folder('Totally Unrelated 001.cbz', self.SLEEPER)
+        self.assertEqual(pick(), sorted(self.SLEEPER)[0])
+        self.assertEqual(pick(), gen.pick_destination_folder(
+            'Totally Unrelated 001.cbz', list(reversed(self.SLEEPER))))
+
+    def test_substring_is_not_enough(self):
+        folders = ['Sleeper 001-012', 'Sleepers 001-004']
+        self.assertEqual(gen.pick_destination_folder('Sleepers 005.cbz', folders),
+                         'Sleepers 001-004')
+
+
+class TestAcceptedMerges(unittest.TestCase):
+    """The 13 key merges that migration step 5 deliberately introduced.
+
+    The no-merge invariant below is measured against a baseline, and that baseline
+    was regenerated when the parser changed. Regenerating hides whatever merged at
+    that moment, so the merges are pinned HERE instead: each one is a pair of
+    library items that used to derive different keys and now derive the same one,
+    with the reason it is correct. If a future change re-splits them, this fails.
+    """
+
+    CASES = [
+        # (item A, item B, shared key, why the merge is right)
+        ('Camp Midnight v01 OGN (2016) (Digital) (TheArchivist-Empire).cbr',
+         'Camp Midnight v02 - Camp Midnight Vs. Camp Daybright (2019) (Digital) (DrDoom-Empire).cbz',
+         'Camp Midnight', 'OGN is packaging, not part of the title'),
+        ('King of the Flies v01 Hallorave HC (2010) (Minutemen Nweako).cbz',
+         'King of the Flies v02 - The Origin of the World HC (2011) (c2c) (fylgja).cbz',
+         'King of the Flies', 'Hallorave is a volume subtitle'),
+        ('Not Drunk Enough Book One (2017) (Digital-Empire).cbz',
+         'Not Drunk Enough Book Two (2020) (Digital-Empire).cbz',
+         'Not Drunk Enough', 'spelled-out book numbers are volume markers'),
+        ('One Path v01 (2025) (Graphic Novel) (Mad Cave Studios) (Digital) (LeDuch-DCP).cbz',
+         'One Path v02 The White King (2026) (Graphic Novel) (Mad Cave Studios) (Digital) (LeDuch-DCP).cbz',
+         'One Path', 'volume subtitle without a dash'),
+        ('Side-Kicked v01 (2015) (Digital) (danke-Empire).cbz',
+         'Side-Kicked v01.5 (2017) (Digital) (danke-Empire).cbz',
+         'Side-Kicked', "old code left the debris 'Side-Kicked .5'"),
+        ('Sleeper 001-012 (2003-2004) (digital-Empire)',
+         'Sleeper - Season One 01-12 (2003) (digital) (Minutemen-Annika)',
+         'Sleeper', 'Season N is a run marker; folders re-separated by '
+                    'pick_destination_folder'),
+        ('Starhenge Book One - The Dragon & The Boar (2023) (Digital-Empire).cbr',
+         'Starhenge Book Two - A Kiss For Atticus 01 (of 04) (2026) (Limited Series) '
+         '(Image Comics) (Digital) (LeDuch-DCP).cbz',
+         'Starhenge', 'spelled-out book numbers again'),
+        ('The Cursed Library 01 (of 03) - Part One - Alpha (2024) (digital) (Salem-Empire).cbr',
+         'The Cursed Library Part Two - Omega #002 (2024) (Series) (Digital-HD) (LeDuch).cbz',
+         'The Cursed Library', 'Part N is a run marker'),
+        ('The Last Session v01 - Roll for Initiative (2022) (digital-SD) (Empire).cbr',
+         'The Last Session v02 Rerolled (2025) (Collection) (Mad Cave Studios) '
+         '(Digital-HD) (LeDuch).cbz',
+         'The Last Session', 'volume subtitle without a dash'),
+        ("Tim Burton's The Nightmare Before Christmas - The Shiver of Christmas Town",
+         "Tim Burton's The Nightmare Before Christmas - The Shiver of Christmas Town "
+         "004 (2026) (4 covers) (digital) (Salem-Empire).cbr",
+         "Tim Burton's The Nightmare Before Christmas - The Shiver of Christmas Town",
+         'a folder and an issue of it; the old code truncated one of the two'),
+        ('Total THB',
+         'Total_THB_v2.cbz',
+         'Total THB', "underscore debris — old code produced 'Total_THB_', so the "
+                      'loose file never found its own folder'),
+        ('Where Does the Rainbow End',
+         'Where Does the Rainbow End_ (2026) (Collection) (Mad Cave Studios) '
+         '(Digital) (LeDuch-DCP).cbz',
+         'Where Does the Rainbow End', 'trailing underscore debris, same cause'),
+        ('The Hobbit (Graphic Novel) (2012 New Edition) [English].cbr',
+         'The Hobbit - A Graphic Novel (2024) (Digital Rip) (Hourman-DCP).cbr',
+         'The Hobbit', "dangling-article debris — 'Graphic Novel' is packaging, "
+                       "and removing it must take the orphaned 'A' with it"),
+    ]
+
+    def test_each_accepted_merge_still_holds(self):
+        for a, b, key, why in self.CASES:
+            with self.subTest(key=key):
+                self.assertEqual(gen.extract_series_name(a), key, why)
+                self.assertEqual(gen.extract_series_name(b), key, why)
 
 
 @unittest.skipIf(creator is None, 'comic_volume_creator not present')
@@ -174,6 +328,12 @@ class TestNoSeriesMerge(unittest.TestCase):
 
     Regenerate the baseline with `python3 tests/make_baseline.py` ONLY to record a
     new intentional baseline — never to paper over a failure here.
+
+    It HAS been regenerated once, at migration step 5, when release.parse_release()
+    replaced the subtraction parser. That deliberately merged 13 groups. Because
+    regenerating hides whatever merged at that moment, all 13 are pinned above in
+    TestAcceptedMerges with the reason each is correct — so the judgement is a test,
+    not a note in a commit message.
     """
 
     @classmethod

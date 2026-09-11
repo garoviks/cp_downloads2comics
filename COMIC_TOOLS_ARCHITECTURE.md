@@ -760,8 +760,7 @@ migration converting existing basename entries. Your preference and the evidence
 
 ## 9. Migration path
 
-Incremental, each step independently verifiable, Phase 1's harness as the net. **Nothing
-below is started.**
+Incremental, each step independently verifiable, Phase 1's harness as the net.
 
 | Step | Change | Verification |
 |---|---|---|
@@ -772,15 +771,25 @@ below is started.**
 | **3b** ✅ done | Align loopback binding: `serve_v2.py` + `serve.py` `"localhost"` → `'127.0.0.1'` (N3) | both bind the literal address |
 | **8** ✅ done | Remove Metron enrichment (Q5): `enrich_cbz`, `inject_comicinfo_into_cbz`, `/api/metron-search`, credentials on `/api/create`, the settings panel | see §10.4 |
 | **9** ✅ done | Delete dead code (§7.5) | CSV byte-identical; 50 tests green |
+| **5** ✅ done | Switch the Organiser to read `Release` fields (and O14, pulled forward) | see §10.5 |
 | **4** | Extract the shared module; both apps import it, behaviour frozen | Byte-identical CSV; no file vanishes from the Builder UI |
-| **5** | Switch the Organiser to read `Release` fields | CSV diff explained row by row |
 | **6** | Switch the Builder's `is_volume`/`extract_series` | Visible-file count before/after |
-| **7** | Apply the remaining decisions: O14 most-specific-wins, O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections | Per-decision test cases + one-time migration |
+| **7** | Apply the remaining decisions: ~~O14~~ (landed in step 5), O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections | Per-decision test cases + one-time migration |
 
 Steps 3, 3b, 8 and 9 were pulled ahead of the shared-module work and the table reordered
 to match. Each is self-contained and touches no code the refactor depends on: 3 and 3b
 are defects Q7/N3 settled, 8 deletes a feature outright, 9 deletes code nothing calls.
 Doing them first shrinks the surface step 4 has to move.
+
+**Step 5 was also taken before step 4, deliberately.** Step 5 does not need the module
+extracted — the Organiser can import `release.py` where it sits. Taken the other way
+round, step 4 moves code *and* step 5 changes behaviour, so any CSV diff would have two
+possible causes and neither step could be verified on its own. Done in this order, step 4
+becomes what its verification line already claims it is: a byte-identical file move with
+both callers already proven against the real library. **O14 was pulled forward into step 5
+as well** — the candidate-aware index made one destination key (`Sleeper`) newly ambiguous,
+and shipping a known instance of a problem with a scheduled fix is worse than doing the
+fix now. §10.5 has the measurement.
 
 **Non-negotiable invariant throughout:** no two previously-distinct series keys may
 **merge**. Splitting is allowed — that is un-corruption. Merging silently moves comics
@@ -790,13 +799,14 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **38 tests, all passing.**
+Four layers. Current state: **78 tests, all passing.**
 
 | Layer | Responsibility | Where |
 |---|---|---|
-| **Unit** | One function, edge cases, no filesystem | `test_series_naming.py`, `test_matching.py` |
+| **Unit** | One function, edge cases, no filesystem | `test_series_naming.py`, `test_matching.py`, `test_release.py` |
 | **Golden case** | Real filenames → exact expected output | same, table-driven |
 | **Whole-library invariant** | No key merges across 29,836 real files | `TestNoSeriesMerge` + `baseline_series_keys.json` |
+| **Pinned judgement** | Every merge that *was* accepted, with its reason | `TestAcceptedMerges` |
 | **End-to-end dry run** | Full plan, nothing moved | not yet built — step 3 |
 
 Existing files:
@@ -804,12 +814,22 @@ Existing files:
 ```
 cp_downloads2comics/tests/
 ├── paths.py                     import plumbing; skips if library unmounted
-├── baseline_series_keys.json    5,052 keys from 5,152 items, post-Phase-1
+├── baseline_series_keys.json    5,081 keys from 5,152 items, post-step-5
 ├── make_baseline.py             regenerates the above
-├── test_series_naming.py        18 — mid-word corruption, underscores, stripping
+├── test_series_naming.py        mid-word corruption, underscores, stripping,
+│                                candidate ordering, pick_destination_folder,
+│                                the merge invariant, the 13 accepted merges
+├── test_release.py              the parser itself, promoted from prototype/
 ├── test_matching.py             13 — whole-word publisher/specific matching
 └── test_mover_loose_files.py     7 — CSV column consumed verbatim
 ```
+
+**Why `TestAcceptedMerges` exists.** `baseline_series_keys.json` is a snapshot, so
+regenerating it silently absolves whatever merged at that moment — the invariant then
+passes for the wrong reason and the judgement survives only as a sentence in a commit
+message. Step 5 accepted 13 merges. Each is now asserted individually with the reason it
+is correct, so re-splitting any of them fails a test. A snapshot records *what* changed;
+these record *why it was allowed to*.
 
 ### 10.1 What must never regress
 
@@ -938,13 +958,115 @@ and `mc_auto_enrich` on load.
 `metron_client.py` is left in the repo, unimported. Deleting it is a separate decision;
 it costs nothing and is the only record of the API shape if this is ever wanted back.
 
+### 10.5 Verification of the parser switch (step 5)
+
+Step 5 replaces the Organiser's series derivation with `release.parse_release()`. Unlike
+step 8 this **is** expected to change output, so "identical" is not the bar. The bar the
+table sets is *every* difference explained, and the invariant that no file loses a home.
+
+#### What changed in the code
+
+| Change | Why |
+|---|---|
+| `parse_filename()` **deleted**; `extract_series_name()` delegates to `parse_release()` | subtraction has no model of what a name *is*, only of what survived — §5.1 |
+| new `extract_series_candidates()` | ambiguity is resolved by the library, not the filename |
+| destination index is candidate-aware | folders index under one key, loose files under all — the rule §10.3 produced |
+| `find_matches` Rule 2 walks the candidate list, most specific first | Q2 most-specific-wins, now driven by the parser |
+| Rule 2c **deleted** | proved *unreachable*, not merely unused — below |
+| new `pick_destination_folder()` | O14, pulled forward — below |
+
+#### Rule 2c: unreachable, not unused
+
+The two fallbacks were measured over all 92 downloads × 5,152 library items — **5,244
+samples, zero fires each**. Zero fires alone justifies deleting nothing; it only says the
+data did not exercise the path. The two were then treated differently:
+
+- **2c** (`2000AD prog 2485` → `2000AD prog`) is *structurally* unreachable. Its input is
+  always a `parse_release()` series, and the parser cuts the title at the first **strong**
+  number — three or more digits always qualifies. A trailing 3–4 digit run is therefore
+  consumed as the issue number and can never survive into a series name. The only survivor
+  would be a series that is nothing but digits, and the rule's own `\s+\d{3,4}$` requires
+  preceding whitespace, so that misses too. **Deleted, with the proof in the comment.**
+- **2b** (before-dash fallback) has a reachable case left: `src_series` is the group key
+  taken from the *first* file in a group, so it can contain ` - ` when the file being
+  matched does not. **Kept**, with both facts recorded — the zero measurement and the one
+  case that keeps it alive.
+
+#### O14, and a regression I introduced
+
+The candidate-aware index made the whole-library invariant report 12 merges. Rather than
+accept or revert it wholesale, the right question was how many destination keys now hold
+**more than one folder**: **17 before, 10 after** — the change removes seven ambiguities
+and creates exactly one, `Sleeper`, which now holds `Sleeper 001-012`,
+`Sleeper - Season One 01-12` and `Sleeper - Season Two 001-012`, because `Season N` is
+absorbed as a run marker (which is what you asked for at the *file* level:
+`Heartthrob Season 3 001` → `Heartthrob`).
+
+Without a tie-break the winner was whatever `os.scandir` yielded first, so
+`Sleeper - Season Two 003.cbz` had a two-in-three chance of the wrong folder. That is a
+known problem with a scheduled fix, so O14 was brought forward instead of shipped:
+`pick_destination_folder()` picks the most specific folder the **filename itself names**
+(whole-word, so `Sleeper` cannot match inside `Sleepers`), ties broken by **file count** —
+`Hello Darkness` and `Hello Darkness (2024)` are both real, and alphabetical order would
+have split the series across both. Where the filename names none of them, it sorts for
+reproducibility rather than guessing; this string becomes a path, so run-to-run stability
+matters more than cleverness.
+
+#### The CSV diff, row by row
+
+| | before | after |
+|---|---|---|
+| rows | 96 | **96** — none added, none removed |
+| rows with any changed cell | — | 30 |
+| rows that changed an actual **decision** | — | **3** |
+| `CONSOLIDATE` / `COPY_TO_BASE` / `CREATE_FOLDER_WITH_FILES` / `CREATE_FOLDER_FROM_FOLDER` | 46 / 35 / 14 / 1 | 47 / **34** / 14 / 1 |
+
+**Zero files lost a home; one gained one.** The 27 other changed rows are series-name and
+display-string improvements that route to the same place. All three decision changes are
+the ones this step exists to make:
+
+| Release | before | after | verdict |
+|---|---|---|---|
+| `Giant Robot Hellboy Returns 02` | `/Robot Hellboy Returns/` | `/Giant Robot Hellboy Returns/` | Phase-1-class mid-word corruption, finally gone from a **path** and not just a display column |
+| `Heartthrob Season 3 001` | `COPY_TO_BASE` to `/` | `CONSOLIDATE` into `/Heartthrob (2016)/` | the appendix item you raised, now landed |
+| `Starhenge Book Two - a Kiss for Atticus 03` | own folder, 1 loose file | `/Starhenge/`, gathering Book One and Book Two | Q1 — the §10.3 judgement call, applied |
+
+`prototype/compare.py` re-run against the whole library: **safe on the merge invariant
+(splits only), 0 DANGEROUS.**
+
+#### Three defects the diff found
+
+The diff was worth doing for these alone; none was visible from tests written in advance:
+
+1. **Dangling-article debris** in `release.py`. Trimming trailing packaging left the
+   article behind: `Invincible Iron Man by Gerry Duggan - The Complete Collection` →
+   `…Gerry Duggan - The`. The trim is now followed by an article sweep, guarded on
+   *whether a trim happened*, so a title genuinely ending in an article keeps it.
+2. **Case 2 named the new folder after the source guess.** Now that Rule 2 walks a
+   candidate list the guess and the matched key can differ, and when they do the matched
+   key is right — it is the name the loose files themselves derive, and they are the ones
+   being moved in. `Cruel Kingdom 2 001` guessed `Cruel Kingdom 2` and matched the loose
+   `Cruel Kingdom v01 (2025).cbz`, so it created `/Cruel Kingdom 2/` and moved a file
+   called `Cruel Kingdom v01` into it.
+3. **`pick_destination_folder` tie-break** — see O14 above.
+
+#### Observation, not fixed here
+
+`normalize_name()` still derives its *matching key* by `VOLUME_PATTERN` subtraction, so it
+eats real title words: `Giant Days` → `days`. Measured: 2,191 folders collapse to 2,174
+normalised keys, and **5** keys cover more than one distinct series — `Human Target`/`The
+Human Target`, `Marked`/`The Marked`, `PunchLine`/`Punchline`, `Rook`/`The Rook`,
+`Six From Sirius`/`Six From Sirius 2`. Every one is an article or sequel collision; none
+is caused by the word list, and all five pre-date this step. Left alone deliberately so
+the CSV diff above has exactly one cause. It belongs with step 4 or 6.
+
 ---
 
 ## Appendix — outstanding items not scheduled
 
-- ~~`Heartthrob Season 3 001` → `Heartthrob Season`; you want `Heartthrob`.~~ **Solved by
-  the prototype** — it routes to the real `Heartthrob (2016)` folder where live matches
-  nothing (§10.3). Lands whenever step 5 switches the Organiser over.
+- ~~`Heartthrob Season 3 001` → `Heartthrob Season`; you want `Heartthrob`.~~ **Done.**
+  It now routes to the real `Heartthrob (2016)` folder where live matched nothing; landed
+  with step 5 and visible in the CSV diff as one of the three changed decisions (§10.5).
 - `2000AD` and `2000AD - Collections␣` already share a `series_map` key today, independent
   of any regex change. Your `2000AD_Collections` rename fixes it with no code change — but
   the rename must also update the `## Skipped Folders` entry, whose real folder name ends

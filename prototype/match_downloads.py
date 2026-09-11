@@ -23,6 +23,11 @@ same universe: every dest_map key that live itself would accept.
 The destination scan walks 43k items, so it is cached in /tmp. Delete the cache
 or pass --rescan after the library changes.
 
+NOTE: "the prototype" here is now `../release.py`. This script keeps comparing it
+against live's own derivation, which is exactly what migration step 5 is replacing —
+so it stays useful until the generator has fully switched over, and becomes a
+live-vs-live tautology afterwards.
+
 Run:  python3 match_downloads.py [--rescan]
 """
 import collections
@@ -35,7 +40,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 import matching_analysis_generator as live      # noqa: E402
-import parse_release as proto                   # noqa: E402
+import release as proto                        # noqa: E402
 
 CACHE = '/tmp/comic_dest_map.pickle'
 

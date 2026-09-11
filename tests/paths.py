@@ -30,6 +30,14 @@ def load_mover():
     return comic_mover
 
 
+def load_release():
+    """Import release — the filename parser the generator derives series names with."""
+    if GENERATOR_DIR not in sys.path:
+        sys.path.insert(0, GENERATOR_DIR)
+    import release
+    return release
+
+
 def load_creator():
     """Import comic_volume_creator_server, or return None if it is not present.
 

@@ -19,6 +19,8 @@ from pathlib import Path
 from collections import defaultdict, Counter
 from typing import Dict, List, Tuple, Optional
 
+import release
+
 # ═══════════════════════════════════════════════════════════════════════════
 # REGEX PATTERNS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -77,92 +79,41 @@ SPECIFIC_SERIES_FOLDERS = {
 # FILENAME PARSING
 # ═══════════════════════════════════════════════════════════════════════════
 
-def parse_filename(filename: str) -> Dict[str, Optional[str]]:
-    """
-    Parse comic filename and extract structured data.
-
-    Returns:
-        {
-            'series': str (base series name without volume info),
-            'subtitle': str|None (text after ' - ' following issue),
-            'year': str|None (YYYY)
-        }
-
-    Examples:
-        "The Cold Witch 01 (of 05) - A Tale of the Shrouded College (2025) (Digital).cbr"
-        → { series: "The Cold Witch", subtitle: "A Tale of the Shrouded College", year: "2025" }
-
-        "Feral v04 - Pet City (2026) (Digital).cbr"
-        → { series: "Feral", subtitle: "Pet City", year: "2026" }
-
-        "Feral 021 (2024) (Series).cbz"
-        → { series: "Feral", subtitle: None, year: "2024" }
-    """
-    if not filename:
-        return {'series': '', 'subtitle': None, 'year': None}
-
-    # Remove extension
-    name = filename
-    for ext in COMIC_EXTS:
-        if name.lower().endswith(ext):
-            name = name[:-len(ext)]
-            break
-
-    # Extract year
-    year_match = YEAR_PATTERN.search(name)
-    year = year_match.group(1) if year_match else None
-
-    # Remove everything from year onwards
-    if year_match:
-        name = name[:year_match.start()].strip()
-
-    # Strip all remaining parenthetical blocks — series/issue names are never inside parens
-    name = re.sub(r'\s*\([^)]*\)', '', name).strip()
-
-    # Remove volume patterns (v04, TPB, Omnibus, etc.)
-    name = VOLUME_PATTERN.sub('', name).strip()
-
-    # Find issue number block
-    issue_match = ISSUE_PATTERN.search(name)
-
-    if issue_match:
-        # Series is everything before the issue block
-        series = name[:issue_match.start()].strip()
-
-        # Subtitle is text after ` - ` following the issue block
-        remaining = name[issue_match.end():].strip()
-        subtitle = None
-
-        if remaining.startswith('-'):
-            remaining = remaining[1:].strip()
-            # Remove any (tags) at the end
-            remaining = re.sub(r'\s*\([^)]*\)\s*$', '', remaining).strip()
-            subtitle = remaining if remaining else None
-    else:
-        # No issue number found
-        # Check if there's a " - " in the name (volume separator)
-        if ' - ' in name:
-            parts = name.split(' - ', 1)
-            series = parts[0].strip()
-            subtitle = parts[1].strip() if len(parts) > 1 else None
-        else:
-            series = name.strip()
-            subtitle = None
-
-    # Clean up series name
-    series = re.sub(r'\s+', ' ', series).strip()
-
-    return {
-        'series': series if series else filename,
-        'subtitle': subtitle,
-        'year': year,
-    }
+# REMOVED: parse_filename(). It derived a series name by SUBTRACTION — cut at the
+# year, then .sub('') away every parenthetical, then VOLUME_PATTERN, then split at
+# ISSUE_PATTERN and keep the residue. Its 'subtitle' and 'year' outputs were read
+# by nothing; extract_series_name() was the only caller and used only 'series'.
+#
+# Subtraction has no model of what a name IS, only of what survived, so it left
+# debris and cut real titles in half:
+#
+#   'Star Trek - Red Shirts - Ghost of the 21st Century'
+#       -> 'Star Trek - Red Shirts - Ghost of the'   (ISSUE_PATTERN matched ' 21'
+#                                                     inside '21st')
+#   'The Wicked + The Divine - Book 02'  -> 'The Wicked + The Divine -'
+#   'Giant Days Vol. 05'                 -> 'Days'
+#
+# release.parse_release() replaces it by finding where the metadata STARTS and
+# keeping the prefix, so nothing is ever removed from the middle. Measured against
+# the real library before the switch — COMIC_TOOLS_ARCHITECTURE.md 10.3. This is
+# migration step 5.
 
 
 def extract_series_name(filename: str) -> str:
-    """Extract base series name from filename."""
-    parsed = parse_filename(filename)
-    return parsed['series']
+    """The single best guess at the series name.
+
+    Prefer extract_series_candidates() at any call site that can consult the
+    destination index. 'Revolution 9 006' and 'Cruel Kingdom 2 001' are
+    structurally identical filenames, and only the library can say which trailing
+    numeral belongs to the title — so a lone guess is guaranteed wrong for one of
+    them, whichever way it guesses.
+    """
+    return release.parse_release(filename).series
+
+
+def extract_series_candidates(filename: str) -> Tuple[str, ...]:
+    """Every series this filename could name, most specific first. Never empty."""
+    return release.parse_release(filename).series_candidates
 
 
 def get_canonical_series_for_folder(folder_path: Path) -> Optional[str]:
@@ -484,7 +435,12 @@ def scan_destination_directory() -> Dict[str, Dict]:
         item_count += 1
 
         if item.is_dir():
-            # Extract series name from folder
+            # A FOLDER is indexed under ONE key — its own primary candidate, no
+            # alternatives. The folder name is a deliberate choice by you, so
+            # 'Ghost Machine - The Official Guidebook' must not also answer to
+            # 'Ghost Machine': an unrelated incoming 'Ghost Machine 001' would be
+            # swept into the guidebook. Where several folders do collide on one
+            # key anyway, pick_destination_folder() decides between them.
             series = extract_series_name(item.name)
             if series:
                 series_map[series]["folders"].append(item.name)
@@ -492,9 +448,16 @@ def scan_destination_directory() -> Dict[str, Dict]:
         elif item.is_file():
             # Loose file in base directory (only .cbz and .cbr)
             if item.suffix.lower() in {'.cbz', '.cbr'}:
-                series = extract_series_name(item.name)
-                if series:
-                    series_map[series]["loose_files"].append(item.name)
+                # A LOOSE FILE is indexed under EVERY candidate — the opposite of
+                # a folder, and deliberately so. No folder exists yet, so grouping
+                # is the entire point: the loose
+                # 'Cindy and Biscuit - We Love Trouble.cbz' has to be reachable as
+                # 'Cindy and Biscuit' for an incoming issue to join it and form a
+                # folder. Indexing under several keys costs nothing here because
+                # find_exact_match() still requires an EXACT key match.
+                for series in extract_series_candidates(item.name):
+                    if series:
+                        series_map[series]["loose_files"].append(item.name)
 
     # Second pass: Scan inside folders for files
     for item in DEST_DIR.rglob("*"):
@@ -503,7 +466,10 @@ def scan_destination_directory() -> Dict[str, Dict]:
         if item_count % 500 == 0:
             print(f"   Scanned {item_count} items...")
 
-        # Only count comic files inside subdirectories (not in base)
+        # Only count comic files inside subdirectories (not in base).
+        # Primary candidate only: this list feeds counts and display, never a
+        # match decision (find_exact_match ignores files_in_folders on its own),
+        # so multi-key indexing here would inflate numbers for no benefit.
         if item.is_file() and item.parent != DEST_DIR and item.suffix.lower() in {'.cbz', '.cbr'}:
             series = extract_series_name(item.name)
             if series:
@@ -633,6 +599,22 @@ def find_exact_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dic
 # looser.
 
 
+def _match_candidates(src_filename: str, src_series: str) -> List[str]:
+    """Series names to try against the destination index, most specific first.
+
+    src_filename may be a path relative to SRC_DIR ('Sha 01-03/Sha 01.cbr'), so
+    only the basename is parsed — a directory component is not part of the title.
+    """
+    ordered: List[str] = []
+    seen = set()
+    for cand in (src_series, *extract_series_candidates(Path(src_filename).name)):
+        key = (cand or '').strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            ordered.append(cand)
+    return ordered
+
+
 def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Optional[str], Optional[Dict], str]:
     """
     Find matches using priority rules:
@@ -650,12 +632,27 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
     if specific:
         return (specific[0], specific[1], specific[2])
 
-    # Rule 2: Try exact series match (before publisher — a series folder beats a publisher folder)
-    exact = find_exact_match(src_series, dest_map)
-    if exact:
-        return (exact[0], exact[1], "EXACT")
+    # Rule 2: Try exact series match (before publisher — a series folder beats a
+    # publisher folder). Every candidate the parser produced is tried, MOST
+    # SPECIFIC FIRST, so the library decides an ambiguity the filename cannot:
+    # 'Die - Loaded v01' lands on the 'Die - Loaded' folder when it exists and on
+    # 'Die' when it does not.
+    #
+    # src_series leads because it is the key scan_source_directory() grouped this
+    # file under; trying it first keeps grouping and matching from disagreeing.
+    for candidate in _match_candidates(src_filename, src_series):
+        exact = find_exact_match(candidate, dest_map)
+        if exact:
+            return (exact[0], exact[1], "EXACT")
 
-    # Rule 2b: Before-dash fallback — try main series name without arc subtitle
+    # Rule 2b: Before-dash fallback — try main series name without arc subtitle.
+    #
+    # Rule 2 now normally covers this: parse_release() already appends the
+    # before-dash form to series_candidates. Measured over 92 real downloads and
+    # all 5,152 base-level library items, this line fired ZERO times. It is kept
+    # only for the case Rule 2 cannot reach — src_series is the group key taken
+    # from the FIRST file in the group, so it can contain ' - ' when the file
+    # being matched does not. Delete it if that case is ever shown impossible.
     if ' - ' in src_series:
         main_series = src_series.split(' - ')[0].strip()
         if main_series and main_series != src_series:
@@ -663,13 +660,17 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
             if exact_main:
                 return (exact_main[0], exact_main[1], "EXACT")
 
-    # Rule 2c: Trailing issue-number fallback — strip 3-4 digit trailing number
-    # Handles series like "2000AD prog 2485" → "2000AD prog"
-    stripped = re.sub(r'\s+\d{3,4}$', '', src_series).strip()
-    if stripped and stripped != src_series:
-        exact_stripped = find_exact_match(stripped, dest_map)
-        if exact_stripped:
-            return (exact_stripped[0], exact_stripped[1], "EXACT")
+    # REMOVED: Rule 2c, the trailing 3-4 digit fallback ("2000AD prog 2485" ->
+    # "2000AD prog"). It is now unreachable, not merely unused.
+    #
+    # Its input is always a parse_release() series, and parse_release cuts the
+    # title at the first STRONG number — three or more digits always qualifies
+    # (release.py _is_strong). So a trailing 3-4 digit run is consumed as the
+    # issue number and can never survive into the series name. The only survivor
+    # would be a series that is nothing BUT digits, and the rule's own
+    # r'\s+\d{3,4}$' requires preceding whitespace, so that misses too.
+    #
+    # Confirmed empirically alongside 2b: zero fires over the same 5,244 samples.
 
     # Rule 3: Check for publisher folders
     publisher = find_publisher_match(src_filename, dest_map)
@@ -683,6 +684,53 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
 # ═══════════════════════════════════════════════════════════════════════════
 # CONSOLIDATION STRATEGY GENERATION
 # ═══════════════════════════════════════════════════════════════════════════
+
+def pick_destination_folder(src_filename: str, folders: List[str]) -> str:
+    """Which folder receives this file, when several share one series key?
+
+    Decision O14 — the most specific folder the FILENAME ITSELF names wins.
+
+    Ten destination keys hold more than one folder. 'Sleeper' holds three:
+    'Sleeper 001-012', 'Sleeper - Season One 01-12' and 'Sleeper - Season Two
+    001-012'. All derive the key 'Sleeper' because parse_release() absorbs
+    'Season N' as a run marker, which is what you asked for at the FILE level
+    ('Heartthrob Season 3 001' -> 'Heartthrob'). Without this function the winner
+    was whichever folder os.scandir happened to yield first — so 'Sleeper - Season
+    Two 003.cbz' had a two-in-three chance of landing in the wrong one.
+
+    contains_words(), not `in`: a bare substring test would let 'Sleeper' match
+    inside 'Sleepers'.
+
+    Equally specific names are broken by FILE COUNT — the folder that already
+    holds the series wins. 'Hello Darkness' and 'Hello Darkness (2024)' are both
+    real folders here and both reduce to 'Hello Darkness'; the (2024) one holds
+    six issues and the other holds one. Alphabetical order would have split the
+    series across both. (Two folders for one series is a library problem worth
+    tidying by hand — this only stops the tool making it worse.)
+
+    When the filename names none of them — reachable via a SPECIFIC_SERIES or
+    PUBLISHER match, where the folder is not expected to appear in the name —
+    there is nothing to choose on, so it sorts for reproducibility rather than
+    guessing. Run-to-run stability matters here: this string becomes a path.
+    """
+    if len(folders) == 1:
+        return folders[0]
+    named = [f for f in folders
+             if contains_words(src_filename, extract_folder_series_name(f))]
+    if not named:
+        return sorted(folders)[0]
+    return sorted(named, key=lambda f: (-len(extract_folder_series_name(f)),
+                                        -_comic_file_count(f), f))[0]
+
+
+def _comic_file_count(folder_name: str) -> int:
+    """Comics directly inside a destination folder. 0 if it cannot be read."""
+    try:
+        return sum(1 for f in (DEST_DIR / folder_name).iterdir()
+                   if f.is_file() and f.suffix.lower() in {'.cbz', '.cbr'})
+    except OSError:
+        return 0
+
 
 def generate_consolidation_strategy(
     src_filename: str,
@@ -717,7 +765,7 @@ def generate_consolidation_strategy(
         action_type = "CONSOLIDATE"
         # Use actual destination folder name from match_data to preserve year/edition info
         if match_data and match_data.get("folders"):
-            display_folder = match_data["folders"][0]
+            display_folder = pick_destination_folder(src_filename, match_data["folders"])
         else:
             display_folder = matched_series if matched_series else src_series
         dest_folder = f"/{display_folder}/"
@@ -756,10 +804,21 @@ def generate_consolidation_strategy(
 
     # Case 2: RIGHT has LOOSE FILES but NO FOLDER
     if num_loose_files > 0:
+        # Name the new folder after the key that MATCHED, not after the source
+        # guess. The two can differ now that Rule 2 walks a candidate list, and
+        # when they do the matched key is the right one: it is the name the loose
+        # files themselves derive, and they are about to be moved in.
+        #
+        # 'Cruel Kingdom 2 001' guesses 'Cruel Kingdom 2' but matches the loose
+        # 'Cruel Kingdom v01 (2025).cbz' on the second candidate. Using the guess
+        # created '/Cruel Kingdom 2/' and moved a file called 'Cruel Kingdom v01'
+        # into it. EXACT only — a PUBLISHER match would name the folder after the
+        # publisher.
+        new_folder_name = matched_series if (confidence == "EXACT" and matched_series) else src_series
         move_source = f"LEFT + RIGHT_FILES({num_loose_files})"
-        consolidation_strategy = f"Create /{src_series}/ folder and move left file + {num_loose_files} loose right file(s) into it"
+        consolidation_strategy = f"Create /{new_folder_name}/ folder and move left file + {num_loose_files} loose right file(s) into it"
         action_type = "CREATE_FOLDER_WITH_FILES"
-        dest_folder = f"/{src_series}/"
+        dest_folder = f"/{new_folder_name}/"
 
         return {
             "Left Panel File": src_filename,

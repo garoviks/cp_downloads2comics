@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Golden cases for the parse_release() prototype.
+"""Golden cases for release.parse_release().
 
-Separate from the production suite in ../tests/ on purpose — this covers code
-that is NOT wired into either app. Run it directly:
-
-    python3 test_parse_release.py
-
-Cases marked FIXES are ones the live code gets wrong today; the comment records
-what live produces, so if the prototype is ever adopted the gain is documented.
+Part of the production suite. It was not, when written: this covered
+`prototype/parse_release.py`, which nothing imported. The parser is now what
+`matching_analysis_generator.py` derives every series name with, so these cases
+guard live behaviour and the "FIXES" comments record what the OLD subtraction
+code produced — kept deliberately, so a regression back to it is recognisable.
 """
-import os
-import sys
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from parse_release import parse_release, resolve, normalize  # noqa: E402
+from paths import load_release
+
+_release = load_release()
+parse_release, resolve, normalize = (
+    _release.parse_release, _release.resolve, _release.normalize)
 
 
 class TestSeriesIsAPrefix(unittest.TestCase):

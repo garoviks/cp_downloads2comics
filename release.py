@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""PROTOTYPE — parse a comic filename once, into a record.
+"""Parse a comic filename once, into a record.
 
-NOT WIRED INTO ANYTHING. Nothing in production imports this. It exists to test
-whether the approach in COMIC_TOOLS_ARCHITECTURE.md §8 actually works before any
-of it is adopted. Compare it against the live code with `compare.py`.
+LIVE. `matching_analysis_generator.py` derives every series name through this.
+It began as `prototype/parse_release.py` and was promoted only after being
+measured against the real library — COMIC_TOOLS_ARCHITECTURE.md §10.3: 92 real
+releases, 56 matched against the old code's 55, and **zero** files that the old
+code placed became homeless.
+
+`comic_volume_creator` does NOT use this yet — that is migration step 6. Until
+then the two apps still derive series names differently, which is the drift
+recorded in §7.
 
 ─────────────────────────────────────────────────────────────────────────────
 Why this exists
@@ -253,11 +259,20 @@ def parse_release(filename: str) -> Release:
     subtitle = ' '.join(rest).lstrip('-–— ').strip() or None
 
     # ---- trim trailing packaging from the head ('Bone Parish Complete Collection')
+    trimmed = False
     while head and _classify(head[-1]) in ('packaging', 'kindword'):
         last = head[-1].strip('.,#').lower()
         if last in KIND_WORDS:
             kind = KIND_WORDS[last]
         trace.append(f'trailing {head[-1]!r} removed')
+        head.pop()
+        trimmed = True
+    # An article the trim left hanging is debris, not a title:
+    # 'Invincible Iron Man by Gerry Duggan - The Complete Collection'
+    #     -> '...Gerry Duggan - The'   without this
+    # Guarded on `trimmed`, so a title that genuinely ends in an article keeps it.
+    while trimmed and head and head[-1].strip('.,').lower() in {'the', 'a', 'an'}:
+        trace.append(f'dangling article {head[-1]!r} removed')
         head.pop()
     while head and head[-1] in {'-', '–', '—', '+', ','}:
         head.pop()                                   # the dangling-dash debris
