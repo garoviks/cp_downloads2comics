@@ -62,6 +62,14 @@ PACKAGING = {
     'tpb', 'omnibus', 'collection', 'collected', 'gn', 'ogn', 'hc', 'sc',
     'graphic', 'novel', 'scanlation', 'complete', 'digital', 'webrip',
 }
+# The subset of PACKAGING that means "this file IS a collected edition", as
+# opposed to packaging that only describes where the file came from. A digital
+# scan of issue 5 is still issue 5, so 'digital'/'webrip'/'scanlation' are
+# deliberately absent: they are trimmed from the title but must not set `kind`.
+COLLECTION_WORDS = {
+    'tpb', 'omnibus', 'collection', 'collected', 'gn', 'ogn', 'hc', 'sc',
+    'graphic', 'novel', 'complete',
+}
 # Words that make the file an issue of a parent series rather than its own thing.
 KIND_WORDS = {'annual': 'annual', 'special': 'special', 'giant': 'special',
               'yearbook': 'annual', 'oneshot': 'one-shot'}
@@ -264,6 +272,11 @@ def parse_release(filename: str) -> Release:
         last = head[-1].strip('.,#').lower()
         if last in KIND_WORDS:
             kind = KIND_WORDS[last]
+        elif last in COLLECTION_WORDS and kind == 'issue':
+            # 'Y - The Last Man Omnibus' is a collected edition even though no
+            # volume number follows. Guarded on kind=='issue' so a 'special' or
+            # 'annual' already read off the tail is not overwritten.
+            kind = 'volume'
         trace.append(f'trailing {head[-1]!r} removed')
         head.pop()
         trimmed = True

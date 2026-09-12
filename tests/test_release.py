@@ -71,6 +71,47 @@ class TestPackagingWordsThatAreRealWords(unittest.TestCase):
         self.assertEqual(r.kind, 'special')
 
 
+class TestUnnumberedCollectionsAreVolumes(unittest.TestCase):
+    """A collected edition is a volume even when no volume NUMBER follows.
+
+    Before this, `kind` was only set to 'volume' by a numbered marker ('v01',
+    'Book Two'), so 'Y - The Last Man Omnibus' parsed as kind='issue'. That is
+    the field the Volume Builder is about to consult to decide what NOT to merge,
+    and merging a collected edition into a run of issues deletes the sources.
+    """
+
+    def test_unnumbered_collection_words_set_kind(self):
+        for name in ['Y - The Last Man Omnibus (2022).cbr',
+                     'Doom Patrol by Grant Morrison Omnibus (2019).cbz',
+                     'A Dumbing Of Age Complete (2021).cbz',
+                     'Bone Parish Complete Collection (2021).cbz',
+                     'Batman - Gotham After Midnight - Collected.cbz']:
+            self.assertEqual(parse_release(name).kind, 'volume', name)
+
+    def test_series_is_untouched_by_the_kind_change(self):
+        # The whole point of this fix is that it is contained to `kind`.
+        self.assertEqual(parse_release('Y - The Last Man Omnibus (2022).cbr').series,
+                         'Y - The Last Man')
+        self.assertEqual(parse_release('A Dumbing Of Age Complete (2021).cbz').series,
+                         'A Dumbing Of Age')
+
+    def test_source_packaging_does_not_make_a_volume(self):
+        # 'digital'/'webrip'/'scanlation' say where the file CAME FROM. A digital
+        # scan of issue 5 is still issue 5, so these are trimmed from the title
+        # but must never set kind='volume'.
+        for name in ['Some Series Digital.cbz', 'Some Series Webrip.cbz',
+                     'Some Series Scanlation.cbz']:
+            self.assertNotEqual(parse_release(name).kind, 'volume', name)
+
+    def test_a_kind_read_off_the_tail_is_not_overwritten(self):
+        # Needs a collection word in the HEAD and a kind word in the TAIL, or the
+        # trim loop is never reached: 'Misty Special Collection' cuts at
+        # 'Special', leaving head=['Misty'], and would pass this vacuously.
+        r = parse_release('Bone Parish Collection Annual (2020).cbz')
+        self.assertIn("trailing 'Collection' removed", r.trace)  # guard reached
+        self.assertEqual(r.kind, 'annual')                       # and it held
+
+
 class TestSpelledOutAndNumericVolumes(unittest.TestCase):
     def test_spelled_out_book_number(self):
         r = parse_release('High Strangeness Book Five (2019).cbz')
