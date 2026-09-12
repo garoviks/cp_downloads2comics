@@ -823,7 +823,9 @@ Incremental, each step independently verifiable, Phase 1's harness as the net.
 | **9** ✅ done | Delete dead code (§7.5) | CSV byte-identical; 50 tests green |
 | **5** ✅ done | Switch the Organiser to read `Release` fields (and O14, pulled forward) | see §10.5 |
 | **4** ✅ closed | ~~Extract the shared module~~ → **O18: the Organiser keeps it, the Builder imports the sibling.** No code moves | see §8.5 — three of the four candidates cannot move at frozen behaviour |
-| **6** | Switch the Builder's `is_volume`/`extract_series` to `parse_release` (`sys.path.append`, **not** `insert(0,…)`) | Visible-file count before/after |
+| **6a** ✅ done | Fix `release.py`'s `kind`: unnumbered collected editions parsed as `kind='issue'` | see §10.6 — contained to `kind`, proved over 29,769 files |
+| **6b** | Switch the Builder's `is_volume` to the **union** `is_volume(n) or kind == 'volume'` — *not* a replacement (§10.6) | measured: 24 files hidden, **0 revealed**, 0 regroups, 0 renames |
+| **6c** | Switch the Builder's `extract_series` to `parse_release(...).series` (`sys.path.append`, **not** `insert(0,…)`) | Visible-file count before/after |
 | **7** | Apply the remaining decisions: ~~O14~~ (landed in step 5), O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections, **and whether to unify `COMIC_EXTS`** (3 files would appear in the Builder UI) | Per-decision test cases + one-time migration |
 
 Steps 3, 3b, 8 and 9 were pulled ahead of the shared-module work and the table reordered
@@ -857,7 +859,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **78 tests, all passing.**
+Four layers. Current state: **82 tests, all passing.**
 
 | Layer | Responsibility | Where |
 |---|---|---|
@@ -1117,6 +1119,93 @@ Human Target`, `Marked`/`The Marked`, `PunchLine`/`Punchline`, `Rook`/`The Rook`
 `Six From Sirius`/`Six From Sirius 2`. Every one is an article or sequel collision; none
 is caused by the word list, and all five pre-date this step. Left alone deliberately so
 the CSV diff above has exactly one cause. It belongs with step 4 or 6.
+
+---
+
+### 10.6 The `kind` fix, and why step 6 became a union (step 6a)
+
+#### What forced it
+
+Step 6's first attempt switched `extract_series` alone and was reverted. The reason is in
+§10.5's sibling: the folder `Edison Rex (01-16 + TPB Vol. 1-2)` went from 18 inert
+`single` groups to **one `ready` group of 18 files that included both TPBs** — on
+`/api/create`, which deletes the sources after merging. The cause is pre-existing and
+subtle: `_VOL_NUM`'s `\s*` does not match `_`, so `is_volume('Edison_Rex_Vol._01_…')` is
+**False** while the spaced form is True. The old `extract_series` could not group
+underscore filenames at all, which is the only reason the hole stayed latent.
+
+So the Builder needs a volume detector that survives underscores — which is exactly what
+`parse_release` gives, since it normalises `_` to space before tokenising.
+
+#### 6a — the `kind` classifier was not fit to be that detector yet
+
+The loop that trims trailing packaging off the title set `kind` only for `KIND_WORDS`.
+Packaging words never set it, so any collected edition **without a volume number after the
+marker** parsed as `kind='issue'`: `Y - The Last Man Omnibus`, three `Doom Patrol …
+Omnibus`, `A Dumbing Of Age … Complete`, `Batman - Gotham After Midnight - Collected`.
+
+Fixed by adding `COLLECTION_WORDS`, a deliberate **subset** of `PACKAGING`. `digital`,
+`webrip` and `scanlation` are excluded: they say where a file came from, and a digital
+scan of issue 5 is still issue 5. They keep being trimmed from the title without setting
+`kind`. A `kind == 'issue'` guard stops a `special`/`annual` already read off the tail
+from being overwritten — mutation-tested, since the obvious test for it
+(`Misty Special Collection`) passes **vacuously**: it cuts at `Special`, leaving
+`head=['Misty']`, so the trim loop never runs. `Bone Parish Collection Annual` is the
+name that actually reaches the guard.
+
+**Containment, measured not asserted.** Across all **29,769** comics in the library,
+`series`, `volume`, `issue`, `issue_range`, `year`, `subtitle` and `tags` are identical
+before and after. **316** files move `issue → volume`; nothing moves in any other
+direction. Nothing in production reads `.kind` (one test did), so the Organiser's CSV
+cannot be touched. 82 tests green.
+
+#### 6b — why it is a union and not a replacement
+
+The obvious step 6 is `is_volume(n)` → `parse_release(n).kind == 'volume'`. Measuring the
+two over 28,378 unique filenames says do not:
+
+| | count | verdict |
+|---|---|---|
+| `kind` says volume, regex does not | 70 | parser right — `Volume 1` spelled out, `Edison_Rex_Vol._01`, `Book #001` |
+| regex says volume, `kind` does not | **636** | **regex right** — and unfixable in the parser |
+
+The 636 split cleanly in two, and neither half is a bug: **357** have the packaging inside
+a `(tag group)` — `(Fan Made TPB)`, `(Graphic Novel)`, `(Book 1)` — which the parser strips
+as tags and never inspects; **279** have the marker mid-title, and the parser is a
+*prefix-consumer* by design, which is the whole reason `Giant Days` and `The Complete
+Peanuts` survive. Making `kind` catch these would require carving from the middle, i.e.
+re-introducing the exact defect §8.1 exists to remove.
+
+Replacing the regex would therefore **reveal 636 collected editions to the merge UI**.
+The union `is_volume(n) or kind == 'volume'` cannot reveal anything: a file can only
+*leave* the visible set. That bounds the verification to one direction, and it is the safe
+one — hiding a real issue is a nuisance, merging a TPB deletes files.
+
+**Measured on a real scan** (with `extract_series` left untouched, so this is attributable):
+groups 1,626 → 1,604, grouped files 2,033 → 2,009, **24 files hidden, 0 revealed**,
+0 renames, 0 status changes. Edison Rex's two TPBs are among the 24, and that folder drops
+back to 16 inert singles. Of the 24, 21 are unambiguous collected editions (`March - Book
+One/Two/Three`, `The Cloven`, `High Strangeness`, `I Hate Fairyland`, `Parker … Volume
+Two`); **3 are debatable** — `Inferno Girl Red - Book Two 001/002/003`, where `Book Two` is
+an arc name and `001` the issue number. Pre-existing `NUMBER_WORDS` behaviour, not
+introduced here, and the failure direction is the safe one.
+
+Splitting 6b from 6c matters for the same reason step 5 preceded step 4: `is_volume` and
+`extract_series` both move files between groups, and changed together no diff has a single
+cause.
+
+#### Deliberately not fixed: tome markers jammed against a dash
+
+`Falka T01- Le Sang des Lupercales` and `India Dreams T4-There` fail `_VOL_ATTACHED`,
+which requires end-of-string after the digits, so both parse `kind='issue'` and keep the
+marker in the series. Fixing it means changing `_tokenise`/`_classify`, which changes
+`series` strings and therefore the Organiser's matching keys and CSV — the uncontained
+half of this work.
+
+It was dropped from step 6 rather than deferred, because under a union it buys nothing:
+`is_volume` already returns True for both (`_VOL_NUM`'s `t\.?\s*\d+` matches `T01`, and
+the trailing `-` satisfies the not-alphanumeric lookahead). The union keeps that coverage.
+Recorded as a known limitation of `series`, not a blocker for the Builder.
 
 ---
 
