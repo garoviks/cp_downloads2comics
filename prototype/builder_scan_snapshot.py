@@ -129,38 +129,69 @@ def _processed_folders(mod):
     return folders
 
 
-def diff(before, after):
-    b = {(r['folder'], r['series']): r for r in before['rows']}
-    a = {(r['folder'], r['series']): r for r in after['rows']}
+def _by_folder(snap):
+    out = {}
+    for r in snap['rows']:
+        out.setdefault(r['folder'], []).append(r)
+    return out
 
+
+def diff(before, after, verbose=False):
+    """Compare per FOLDER, as a partition of that folder's files.
+
+    NOT keyed on (folder, series). Step 6 changes the series STRING, so a key
+    containing it reports every rename as a disappearance plus an appearance —
+    the first run of this said '1060 groups disappeared' when nothing had. What
+    actually matters is whether the *grouping* changed: which files the Builder
+    considers one run. So each folder's groups are compared as a set-partition
+    of its files, and the labels are compared separately.
+    """
     print('=== TOTALS ===')
     for k in before['totals']:
         bv, av = before['totals'][k], after['totals'].get(k)
         mark = '' if bv == av else '   <-- CHANGED'
         print(f'  {k:34} {bv:>7} -> {av:>7}{mark}')
 
-    gone, new = sorted(set(b) - set(a)), sorted(set(a) - set(b))
-    print(f'\n=== GROUPS THAT DISAPPEARED: {len(gone)} ===')
-    for k in gone:
-        print(f'  {k[0]}\n     series {k[1]!r}  {len(b[k]["files"])} files  {b[k]["status"]}')
-    print(f'\n=== GROUPS THAT APPEARED: {len(new)} ===')
-    for k in new:
-        print(f'  {k[0]}\n     series {k[1]!r}  {len(a[k]["files"])} files  {a[k]["status"]}')
+    bf, af = _by_folder(before), _by_folder(after)
+    renamed, regrouped, status_changed = [], [], []
 
-    changed = [k for k in sorted(set(b) & set(a)) if b[k] != a[k]]
-    print(f'\n=== GROUPS THAT CHANGED: {len(changed)} ===')
-    for k in changed:
-        print(f'  {k[0]}  ({k[1]!r})')
-        for f in ('outname', 'flag', 'status'):
-            if b[k][f] != a[k][f]:
-                print(f'     {f}: {b[k][f]!r} -> {a[k][f]!r}')
-        if b[k]['files'] != a[k]['files']:
-            lost = set(b[k]['files']) - set(a[k]['files'])
-            got = set(a[k]['files']) - set(b[k]['files'])
-            if lost:
-                print(f'     lost {len(lost)}: {sorted(lost)[:3]}')
-            if got:
-                print(f'     gained {len(got)}: {sorted(got)[:3]}')
+    for folder in sorted(set(bf) | set(af)):
+        bg, ag = bf.get(folder, []), af.get(folder, [])
+        bpart = {frozenset(r['files']) for r in bg}
+        apart = {frozenset(r['files']) for r in ag}
+        if bpart != apart:
+            regrouped.append((folder, bg, ag))
+            continue
+        # Same partition — only labels and derived fields can differ.
+        bmap = {frozenset(r['files']): r for r in bg}
+        amap = {frozenset(r['files']): r for r in ag}
+        for key in bmap:
+            b_, a_ = bmap[key], amap[key]
+            if b_['series'] != a_['series']:
+                renamed.append((folder, b_, a_))
+            if b_['status'] != a_['status'] or b_['flag'] != a_['flag']:
+                status_changed.append((folder, b_, a_))
+
+    print(f'\n=== REGROUPED — the Builder now draws different run boundaries: '
+          f'{len(regrouped)} folder(s) ===')
+    for folder, bg, ag in regrouped:
+        print(f'\n  {folder}')
+        for r in bg:
+            print(f'     before  {len(r["files"]):3} files  {r["series"]!r}')
+        for r in ag:
+            print(f'     after   {len(r["files"]):3} files  {r["series"]!r}')
+
+    print(f'\n=== RENAMED, same files: {len(renamed)} ===')
+    show = renamed if verbose else renamed[:25]
+    for folder, b_, a_ in show:
+        print(f'  {b_["series"]!r}\n     -> {a_["series"]!r}')
+    if len(renamed) > len(show):
+        print(f'  ... and {len(renamed) - len(show)} more (use --verbose)')
+
+    print(f'\n=== STATUS / FLAG CHANGED: {len(status_changed)} ===')
+    for folder, b_, a_ in status_changed:
+        print(f'  {folder}\n     {b_["series"]!r}: {b_["flag"]}/{b_["status"]} '
+              f'-> {a_["flag"]}/{a_["status"]}')
 
     # THE headline number for step 6. A file that was grouped and now is not has
     # vanished from the UI; that is the regression the step must not ship.
@@ -185,7 +216,7 @@ def main():
             before = json.load(f)
         with open(sys.argv[i + 2]) as f:
             after = json.load(f)
-        return diff(before, after)
+        return diff(before, after, verbose='--verbose' in sys.argv)
 
     out = sys.argv[1] if len(sys.argv) > 1 else 'builder_snapshot.json'
     mod = load_builder()
