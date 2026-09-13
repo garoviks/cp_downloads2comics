@@ -53,7 +53,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-COMIC_EXTS = {'.cbz', '.cbr', '.zip', '.rar'}
+# Unified with the Volume Builder's set (decision, step 7). This used to also
+# accept .zip and .rar, which was not a wider net for comics so much as a wider
+# net for everything: the source directory holds 0 of them, and the only .zip
+# anywhere near it is a business ebook that the old set would have happily
+# parsed as a comic release. Both tools now agree on what a comic file is.
+COMIC_EXTS = {'.cbz', '.cbr'}
 
 # Packaging words, consumed ONLY as a trailing suffix. Because they are never
 # removed from the middle or the start, 'Giant Days', 'The Complete Peanuts' and

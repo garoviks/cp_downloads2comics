@@ -25,7 +25,7 @@ import release
 # REGEX PATTERNS
 # ═══════════════════════════════════════════════════════════════════════════
 
-COMIC_EXTS = {'.cbz', '.cbr', '.zip', '.rar'}
+COMIC_EXTS = {'.cbz', '.cbr'}    # unified with release.py and the Builder (step 7)
 
 # Anchors are (?<![A-Za-z0-9]) / (?![A-Za-z0-9]) rather than \b, because \b counts
 # '_' as a word character and release filenames are full of underscores
