@@ -176,6 +176,7 @@ the Status column were decided by you, not read off the code — see §8.4 for e
 | O16 | Never auto-file into creator or event containers; publisher containers are fine | **settled §8.4 Q3** — not implemented |
 | O17 | The library root is a parameter, not a constant | **settled §8.4 Q6** — Builder yes, Organiser no (`:58-59`) |
 | O18 | The Organiser owns the parser; the Builder imports it from the sibling repo | **settled 2026-09-11** — §8.5, no third repo |
+| O19 | What the Builder should do with a group whose files carry no ordinal | **open** — §10.6; 15 such groups, 6 of them legitimate merges |
 
 ### 3.2 Volume Builder
 
@@ -825,8 +826,8 @@ Incremental, each step independently verifiable, Phase 1's harness as the net.
 | **4** ✅ closed | ~~Extract the shared module~~ → **O18: the Organiser keeps it, the Builder imports the sibling.** No code moves | see §8.5 — three of the four candidates cannot move at frozen behaviour |
 | **6a** ✅ done | Fix `release.py`'s `kind`: unnumbered collected editions parsed as `kind='issue'` | see §10.6 — contained to `kind`, proved over 29,769 files |
 | **6b** ✅ done | Switch the Builder's `is_volume` to the **union** `is_volume(n) or kind == 'volume'` — *not* a replacement (§10.6); lands the O18 import wiring | 24 files hidden, **0 revealed**, 0 renames, 0 status changes, grouping purely subtractive |
-| **6c** | Switch the Builder's `extract_series` to `parse_release(...).series` (`sys.path.append`, **not** `insert(0,…)`) | Visible-file count before/after |
-| **7** | Apply the remaining decisions: ~~O14~~ (landed in step 5), O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections, **and whether to unify `COMIC_EXTS`** (3 files would appear in the Builder UI) | Per-decision test cases + one-time migration |
+| **6c** ✅ done | Switch the Builder's `extract_series` to `parse_release(...).series` | 0 files vanished, 0 appeared; 1,604 → 1,530 groups. **Opened O19** — see §10.6 |
+| **7** | Apply the remaining decisions: ~~O14~~ (landed in step 5), O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections, **O19 ordinal-less groups** (§10.6), **and whether to unify `COMIC_EXTS`** (3 files would appear in the Builder UI) | Per-decision test cases + one-time migration |
 
 Steps 3, 3b, 8 and 9 were pulled ahead of the shared-module work and the table reordered
 to match. Each is self-contained and touches no code the refactor depends on: 3 and 3b
@@ -1205,6 +1206,50 @@ introduced here, and the failure direction is the safe one.
 Splitting 6b from 6c matters for the same reason step 5 preceded step 4: `is_volume` and
 `extract_series` both move files between groups, and changed together no diff has a single
 cause.
+
+#### 6c — the series switch, and the defect it exposed
+
+Measured from the post-6b scan, so this change is isolated: **0 files vanished, 0
+appeared**, grouped files unchanged at 2,009. Groups **1,604 → 1,530** as previously-split
+runs joined up, with 901 renames across 41 regrouped folders. Edison Rex is now one
+16-issue run with both TPBs excluded — 6b is what makes that safe.
+
+**O19 — `ready` means "more than one file", and nothing more.** `scan_root()` sets
+`status = 'ready'` for any group where `n > 1`; conditions A–E then demote some. There is
+no check that the files carry *distinct ordinals*. Before 6c the noise left in the series
+key — years, scan-group names — kept unrelated files in separate one-file groups, so this
+never showed. Removing the noise merges the real runs and the accidents alike.
+
+35 groups became actionable. Splitting them by whether `parse_release` can find an ordinal:
+
+| | count | example |
+|---|---|---|
+| distinct ordinals — a real run | 20 | Edison Rex 001–016, Nancy in Hell 01–04 |
+| **no ordinal on any file** | **15** | see below |
+
+The 15 are not one problem but three, which is why there is no obvious single rule:
+
+- **Duplicate scans of one comic** — merging would put the same content in twice:
+  `Defenders - There Are No Rules`, `Leviathan`, `Gone`, `Somna`, `Midnite Show`,
+  `Kill Me & Other Curiosities`, both `John Carpenter's …` pairs, `Bone - Happy Halloween`.
+- **Unrelated comics sharing a title** — `Strange Adventures (2000)` with
+  `Strange Adventures (DC 2022)`, `The Well (2022)` with `The Well (2025)`,
+  `Space Bastards` with `Space Bastards - Special Delivery`.
+- **Legitimate runs the parser cannot number** — `Into the Unbeing - Part One/Two`,
+  `Shock - Ghosts of Knightgrave - Part One/Two/Three`, `Kaijumax Season Five/Six`.
+
+Nothing merges without a click, so this is not live data loss. It matters because the UI
+has *Select All* → *Create Selected CBZs* and a `ready` filter, so the bad recommendations
+sit in the same bulk selection as the good ones. Any guard that demotes ordinal-less groups
+would also demote the six legitimate ones, so the fix is a requirements call, not a defect
+fix. **Open — carried to step 7.**
+
+> Measuring this needed two attempts. The first used the Builder's own
+> `extract_zero_padded_issue()` and reported that **all 35** groups lacked ordinals,
+> including Edison Rex 001–016. That helper cannot read `_` either — the same blind spot
+> as `_VOL_NUM`, §10.6 above — so it was answering "unparseable", not "duplicate". This is
+> the §10.3 failure again: a measurement is only as good as its instrument, and reusing a
+> component that shares the bug under investigation guarantees a confident wrong number.
 
 #### Deliberately not fixed: tome markers jammed against a dash
 
