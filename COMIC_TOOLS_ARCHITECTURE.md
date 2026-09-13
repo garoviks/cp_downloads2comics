@@ -824,7 +824,7 @@ Incremental, each step independently verifiable, Phase 1's harness as the net.
 | **5** ✅ done | Switch the Organiser to read `Release` fields (and O14, pulled forward) | see §10.5 |
 | **4** ✅ closed | ~~Extract the shared module~~ → **O18: the Organiser keeps it, the Builder imports the sibling.** No code moves | see §8.5 — three of the four candidates cannot move at frozen behaviour |
 | **6a** ✅ done | Fix `release.py`'s `kind`: unnumbered collected editions parsed as `kind='issue'` | see §10.6 — contained to `kind`, proved over 29,769 files |
-| **6b** | Switch the Builder's `is_volume` to the **union** `is_volume(n) or kind == 'volume'` — *not* a replacement (§10.6) | measured: 24 files hidden, **0 revealed**, 0 regroups, 0 renames |
+| **6b** ✅ done | Switch the Builder's `is_volume` to the **union** `is_volume(n) or kind == 'volume'` — *not* a replacement (§10.6); lands the O18 import wiring | 24 files hidden, **0 revealed**, 0 renames, 0 status changes, grouping purely subtractive |
 | **6c** | Switch the Builder's `extract_series` to `parse_release(...).series` (`sys.path.append`, **not** `insert(0,…)`) | Visible-file count before/after |
 | **7** | Apply the remaining decisions: ~~O14~~ (landed in step 5), O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections, **and whether to unify `COMIC_EXTS`** (3 files would appear in the Builder UI) | Per-decision test cases + one-time migration |
 
@@ -1184,7 +1184,19 @@ one — hiding a real issue is a nuisance, merging a TPB deletes files.
 **Measured on a real scan** (with `extract_series` left untouched, so this is attributable):
 groups 1,626 → 1,604, grouped files 2,033 → 2,009, **24 files hidden, 0 revealed**,
 0 renames, 0 status changes. Edison Rex's two TPBs are among the 24, and that folder drops
-back to 16 inert singles. Of the 24, 21 are unambiguous collected editions (`March - Book
+back to 16 inert singles.
+
+Shipped, and the prediction reproduced exactly against the committed baseline. Three
+further checks on the shipped version, because "24 fewer files" alone does not prove the
+*remaining* groups are unharmed:
+
+- **Purely subtractive.** Every one of the 1,604 after-groups equals some before-group
+  minus hidden files — 0 exceptions. This is the §9 non-negotiable invariant restated for
+  the Builder: no two previously-distinct groups merged.
+- **The counts reconcile.** 2,033 − 24 = 2,009 grouped, 3,718 + 24 = 3,742 invisible. No
+  file went anywhere other than from the first set to the second.
+- **`.comic_exclusions.md` byte-identical** (sha256 before/after), and the server boots
+  and serves `GET /` → 200 with the new sibling import live. Of the 24, 21 are unambiguous collected editions (`March - Book
 One/Two/Three`, `The Cloven`, `High Strangeness`, `I Hate Fairyland`, `Parker … Volume
 Two`); **3 are debatable** — `Inferno Girl Red - Book Two 001/002/003`, where `Book Two` is
 an arc name and `001` the issue number. Pre-existing `NUMBER_WORDS` behaviour, not
