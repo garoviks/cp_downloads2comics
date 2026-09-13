@@ -173,10 +173,10 @@ the Status column were decided by you, not read off the code — see §8.4 for e
 | O13 | Collected editions and single issues share one series folder | **settled §8.4 Q1** — already implemented |
 | O14 | Arcs/spin-offs go to the most specific folder that exists, else the parent | **settled §8.4 Q2** — parent-only today; see §4.3 |
 | O15 | Confine all writes to the library root | **implemented** — `resolve_under_dest`/`is_plain_name`, §5.2 |
-| O16 | Never auto-file into creator or event containers; publisher containers are fine | **settled §8.4 Q3** — not implemented |
-| O17 | The library root is a parameter, not a constant | **settled §8.4 Q6** — Builder yes, Organiser no (`:58-59`) |
+| O16 | Never auto-file into creator or event containers; publisher containers are fine | **settled §8.4 Q3 + step 7** — exact-match-only, franchise shelves added; not implemented, §10.7 |
+| O17 | The library root is a parameter, not a constant | **settled §8.4 Q6** — Builder yes, Organiser no (`:58-59`); not implemented, §10.7 |
 | O18 | The Organiser owns the parser; the Builder imports it from the sibling repo | **settled 2026-09-11** — §8.5, no third repo |
-| O19 | What the Builder should do with a group whose files carry no ordinal | **open** — §10.6; 15 such groups, 6 of them legitimate merges |
+| O19 | What the Builder should do with a group whose files carry no ordinal | **settled + implemented** — new `review` status, §10.7; 16 groups demoted |
 
 ### 3.2 Volume Builder
 
@@ -827,7 +827,11 @@ Incremental, each step independently verifiable, Phase 1's harness as the net.
 | **6a** ✅ done | Fix `release.py`'s `kind`: unnumbered collected editions parsed as `kind='issue'` | see §10.6 — contained to `kind`, proved over 29,769 files |
 | **6b** ✅ done | Switch the Builder's `is_volume` to the **union** `is_volume(n) or kind == 'volume'` — *not* a replacement (§10.6); lands the O18 import wiring | 24 files hidden, **0 revealed**, 0 renames, 0 status changes, grouping purely subtractive |
 | **6c** ✅ done | Switch the Builder's `extract_series` to `parse_release(...).series` | 0 files vanished, 0 appeared; 1,604 → 1,530 groups. **Opened O19** — see §10.6 |
-| **7** | Apply the remaining decisions: ~~O14~~ (landed in step 5), O16 container gating, O17 rebasable root, absolute paths in all three exclusions sections, **O19 ordinal-less groups** (§10.6), **and whether to unify `COMIC_EXTS`** (3 files would appear in the Builder UI) | Per-decision test cases + one-time migration |
+| **7a** ✅ done | Absolute paths in the exclusions `## Skipped Folders` section, so trailing-space names stay legible and the file stops rewriting on every scan | 5 tests; the no-op rewrite is caught by counting `write_exclusions` calls, not by comparing bytes |
+| **7b** ✅ done | **O19** — demote ordinal-less groups to a new `review` status, excluded from *Select All* | 16 groups `ready` → `review`, nothing else moves; 3 mutations, 3 distinct failures — §10.7 |
+| **7c** ✅ done | Unify `COMIC_EXTS` to `.cbz`/`.cbr` across both tools | 0 files dropped; the source dir holds zero `.zip`/`.rar` — §10.7 |
+| **7d** | **O16** container gating — classify ~109 container folders, exact-series-match only, franchise shelves included | not started; only a 4-entry set in `prototype/` exists — §10.7 |
+| **7e** | **O17** rebasable root — `--dest` for `serve_v2.py`, `matching_analysis_generator.py`, `comic_mover.py` | not started; must not loosen `resolve_under_dest` confinement — §10.7 |
 
 Steps 3, 3b, 8 and 9 were pulled ahead of the shared-module work and the table reordered
 to match. Each is self-contained and touches no code the refactor depends on: 3 and 3b
@@ -860,7 +864,9 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **82 tests, all passing.**
+Four layers. Current state: **82 tests in the Organiser, 16 in the Builder, all passing.**
+The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
+and `tests/test_review_status.py` (O19).
 
 | Layer | Responsibility | Where |
 |---|---|---|
@@ -1242,7 +1248,7 @@ Nothing merges without a click, so this is not live data loss. It matters becaus
 has *Select All* → *Create Selected CBZs* and a `ready` filter, so the bad recommendations
 sit in the same bulk selection as the good ones. Any guard that demotes ordinal-less groups
 would also demote the six legitimate ones, so the fix is a requirements call, not a defect
-fix. **Open — carried to step 7.**
+fix. **Settled and implemented in step 7 — see §10.7.**
 
 > Measuring this needed two attempts. The first used the Builder's own
 > `extract_zero_padded_issue()` and reported that **all 35** groups lacked ordinals,
@@ -1263,6 +1269,89 @@ It was dropped from step 6 rather than deferred, because under a union it buys n
 `is_volume` already returns True for both (`_VOL_NUM`'s `t\.?\s*\d+` matches `T01`, and
 the trailing `-` satisfies the not-alphanumeric lookahead). The union keeps that coverage.
 Recorded as a known limitation of `series`, not a blocker for the Builder.
+
+### 10.7 Step 7 — the three requirements calls
+
+Step 7 was two mechanical defects and three questions only you could answer. The defects
+are done; the answers are below, one implemented and two still to build.
+
+#### O19 — a `review` status ✅ implemented
+
+Of the three options (hard-block the merge, flag for review, leave it alone) the middle one
+is the only one that survives the §10.6 breakdown: a hard block would refuse the six
+legitimate runs, and leaving it alone keeps bad merges inside *Select All*. So ordinal-less
+groups are **demoted to a new `review` status** — visible, filterable, still buildable one
+at a time, but excluded from bulk selection.
+
+Two ordering constraints made this harder than it looks, and both were found by measuring
+rather than by reading:
+
+1. **The demotion must run last.** Placed in `scan_root`'s status chain it fires *before*
+   conditions A–E and converted three `temp_exclude`s and one `incomplete` into `review`.
+   Those statuses carry specific signal — "still releasing this year", "missing issues" —
+   and `review` is vaguer, so that was a promotion wearing a guard's clothes. It now runs
+   as a final pass over `apply_auto_logic`, gated on `status in ('ready', 'auto_ready')`.
+2. **`_has_distinct_ordinals` must not use the Builder's own issue helpers.**
+   `extract_zero_padded_issue()` cannot see `_` as a separator, the exact blind spot that
+   produced the wrong measurement in §10.6. It calls `parse_release` instead.
+
+Shipped result, measured against the post-6c scan:
+
+| status | 6c | after O19 |
+|---|---|---|
+| ready | 57 | **41** |
+| review | 0 | **16** |
+| auto_ready / incomplete / redundant / single / temp_exclude | — | unchanged |
+
+All 16 came from `ready`; no status changed to anything but `review`. Group and file counts
+are untouched (1,530 groups / 2,009 files), as they must be — this changes advice, not data.
+
+The UI guard is the point of the whole exercise: `/api/create` **deletes the source files**,
+so *Select All* skips `review` rows unless Review is the active filter. Selecting one by
+hand still works, which keeps the six legitimate runs buildable.
+
+> Three mutations were run against the new tests, because two tests earlier in this work
+> turned out vacuous (§10.3, §10.5). Removing the status gate, the demotion loop, and the
+> all-None early return each fail a *different* test. The third mutation initially
+> **survived** — that early return only decides the one-file case, which nothing covered —
+> so a test was added for it rather than leaving the branch unpinned.
+
+#### `COMIC_EXTS` — unified to `.cbz`/`.cbr` ✅ implemented
+
+The Organiser accepted `.zip` and `.rar`; the Builder never did. I initially framed
+narrowing as a loss of function and was wrong: the source directory holds **52 `.cbz`,
+43 `.cbr`, and zero of either extra extension**, while the only `.zip` anywhere near it is
+a business ebook the old set would have happily parsed as a comic release. Not a wider net
+for comics — a wider net for everything. 0 files dropped from the current corpus.
+
+#### O16 — container gating, with franchise shelves added ⬜ not implemented
+
+Answer: **exact series match only** for container-shaped folders. While scoping this I
+found a gap in the settled §8.4 Q3 table — it buckets containers as publisher / anthology /
+creator / event, and **franchise or character shelves fit none of them**:
+
+| shelf | files |
+|---|---|
+| `Star Trek` | 193 |
+| `Batman` | 152 |
+| `Hellboy` | 130 |
+| `Avengers` | 74 |
+
+These are the dangerous ones: `Batman - Year One` is genuinely a Batman book, but so is
+half the DC line by name, and a prefix rule would sweep in everything. Exact-match-only
+makes the shelf inert for auto-filing without excluding it from the library.
+
+Remaining work is real: ~109 container-shaped folders need classifying, and production
+gating code does not exist yet — the only thing in the tree is a 4-entry `CREATOR_OR_EVENT`
+set in `prototype/match_downloads.py:49`.
+
+#### O17 — rebasable root ⬜ not implemented
+
+`DEST_DIR = Path("/mnt/extramedia/Comics")` is hardcoded in `serve_v2.py:25`,
+`matching_analysis_generator.py:61` and `comic_mover.py:27`. The pattern to copy already
+exists (`matching_analysis_generator.py:873` has `--dest`). This one needs care rather than
+volume: it touches `comic_mover.resolve_under_dest`, which is the confinement check behind
+N4/Q7i, and a rebasable root that loosens confinement is worse than a hardcoded one.
 
 ---
 
