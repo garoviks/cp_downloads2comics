@@ -75,6 +75,29 @@ SPECIFIC_SERIES_FOLDERS = {
     "Gomer Goof",
 }
 
+# O16 — container folders. The curated list lives in the library root so it
+# travels with the library rather than with this script; see the file's own
+# header for what each kind means.
+CONTAINERS_FILE = ".comic_containers.md"
+
+# How many distinct series an UNLISTED folder must hold before it is treated as a
+# container anyway. This is the fail-safe for shelves added after the list was
+# written, so it is set high on purpose: the curated file is the authority, and a
+# number low enough to be "accurate" would also catch ordinary series folders
+# whose arcs parse apart — 'Lumberjanes' looks like 12 series, 'Something is
+# Killing the Children' like 11. Blocking those would be a regression, so the
+# threshold sits well above them and only unmistakable shelves trip it.
+UNCLASSIFIED_CONTAINER_SERIES = 20
+
+# Filled by scan_destination_directory(): stripped-lowercase top-level folder name
+# -> set of distinct series found anywhere beneath it. Feeds the fail-safe above.
+FOLDER_SERIES: Dict[str, set] = {}
+
+# Cache for load_containers(), keyed by the root it was read from — DEST_DIR is
+# rebasable at runtime (O17), so a plain cache would serve library A's list to
+# library B.
+_CONTAINERS_CACHE: Dict[str, Dict[str, str]] = {}
+
 # ═══════════════════════════════════════════════════════════════════════════
 # FILENAME PARSING
 # ═══════════════════════════════════════════════════════════════════════════
@@ -460,6 +483,7 @@ def scan_destination_directory() -> Dict[str, Dict]:
                         series_map[series]["loose_files"].append(item.name)
 
     # Second pass: Scan inside folders for files
+    FOLDER_SERIES.clear()
     for item in DEST_DIR.rglob("*"):
         item_count += 1
 
@@ -474,6 +498,11 @@ def scan_destination_directory() -> Dict[str, Dict]:
             series = extract_series_name(item.name)
             if series:
                 series_map[series]["files_in_folders"].append(item.name)
+                # O16 fail-safe input: how many distinct series sit under each
+                # TOP-LEVEL folder. Counted here because this walk already
+                # visits every file; a second pass would double the scan time.
+                top = item.relative_to(DEST_DIR).parts[0].strip().lower()
+                FOLDER_SERIES.setdefault(top, set()).add(series.lower())
 
     print(f"\n✅ Destination scan complete:")
     print(f"   Total items scanned: {item_count}")
@@ -599,6 +628,91 @@ def find_exact_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dic
 # looser.
 
 
+def load_containers() -> Dict[str, str]:
+    """Read `.comic_containers.md` from the library root.
+
+    Returns {stripped-lowercase folder name: kind}. Kind is the '## Heading'
+    lowercased, so adding a section to the file is enough to add a kind.
+
+    Folder identity is keyed STRIPPED, matching `.comic_exclusions.md`: two real
+    folders end in a space ('2000AD - Collections ', 'Rick and Morty '), and a
+    list that only matched the untrimmed form would silently miss them.
+
+    A missing file is not an error — it means no folder is classified, and every
+    folder then behaves as it did before O16.
+    """
+    root = str(DEST_DIR)
+    if root in _CONTAINERS_CACHE:
+        return _CONTAINERS_CACHE[root]
+
+    kinds: Dict[str, str] = {}
+    path = DEST_DIR / CONTAINERS_FILE
+    if path.exists():
+        current = None
+        for line in path.read_text(encoding='utf-8').splitlines():
+            line = line.rstrip()
+            if line.startswith('## '):
+                # '## Publisher (10)' -> 'publisher'
+                current = line[3:].split('(')[0].strip().lower()
+            elif line.startswith('- ') and current:
+                name = line[2:].strip().lower()
+                if name:
+                    kinds[name] = current
+    _CONTAINERS_CACHE[root] = kinds
+    return kinds
+
+
+def container_kind(folder_name: str) -> Optional[str]:
+    """What kind of container is this destination folder, if any?
+
+    Returns None for an ordinary series folder, the curated kind for a listed
+    one, and 'unknown' for a folder that is unmistakably container-shaped but
+    absent from the list — see UNCLASSIFIED_CONTAINER_SERIES.
+    """
+    key = folder_name.strip().lower()
+    listed = load_containers().get(key)
+    if listed:
+        return listed
+    if len(FOLDER_SERIES.get(key, ())) >= UNCLASSIFIED_CONTAINER_SERIES:
+        return 'unknown'
+    return None
+
+
+def container_allows(folder_name: str, is_primary: bool) -> bool:
+    """May this destination folder receive an auto-filed download?
+
+    `is_primary` says whether the series that matched is the file's OWN series
+    rather than a shortened form of it. That distinction is the whole gate:
+    'Star Trek - Deviations - Evermore' also answers to 'Star Trek', and it is
+    the second, shortened candidate that reaches a shelf it does not belong on.
+
+    Anything not recognised as a container is allowed, so the default is the
+    behaviour that existed before O16.
+    """
+    kind = container_kind(folder_name)
+    if kind is None or kind == 'publisher':
+        return True
+    if kind in ('anthology', 'franchise'):
+        return is_primary
+    # creator, event, and anything unclassified: never. An unrecognised kind
+    # lands here too — a typo in the file's headings must fail closed, not open.
+    return False
+
+
+def _match_is_allowed(dest_data: Dict, is_primary: bool) -> bool:
+    """Gate one exact match, which may name several folders at once.
+
+    Ten destination keys hold more than one folder (pick_destination_folder()
+    chooses between them later), so this refuses the match only when EVERY
+    candidate folder refuses it. Loose base-directory files are not folders and
+    cannot be containers, so a key backed by loose files is always allowed.
+    """
+    folders = dest_data.get('folders') or []
+    if not folders:
+        return True
+    return any(container_allows(f, is_primary) for f in folders)
+
+
 def _match_candidates(src_filename: str, src_series: str) -> List[str]:
     """Series names to try against the destination index, most specific first.
 
@@ -640,9 +754,16 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
     #
     # src_series leads because it is the key scan_source_directory() grouped this
     # file under; trying it first keeps grouping and matching from disagreeing.
-    for candidate in _match_candidates(src_filename, src_series):
+    #
+    # O16: only the FIRST candidate is the file's own series; the rest are
+    # shortened forms the parser also offers. A container folder accepts the
+    # first and refuses the rest, so a shelf cannot collect everything that
+    # shares its opening words. A refused candidate falls through to the next
+    # one rather than ending the search — 'Star Trek - Deviations' should still
+    # get the chance to match a real 'Star Trek - Deviations' folder.
+    for index, candidate in enumerate(_match_candidates(src_filename, src_series)):
         exact = find_exact_match(candidate, dest_map)
-        if exact:
+        if exact and _match_is_allowed(exact[1], is_primary=(index == 0)):
             return (exact[0], exact[1], "EXACT")
 
     # Rule 2b: Before-dash fallback — try main series name without arc subtitle.
@@ -657,7 +778,8 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
         main_series = src_series.split(' - ')[0].strip()
         if main_series and main_series != src_series:
             exact_main = find_exact_match(main_series, dest_map)
-            if exact_main:
+            # Never primary by construction: this IS the shortened form.
+            if exact_main and _match_is_allowed(exact_main[1], is_primary=False):
                 return (exact_main[0], exact_main[1], "EXACT")
 
     # REMOVED: Rule 2c, the trailing 3-4 digit fallback ("2000AD prog 2485" ->

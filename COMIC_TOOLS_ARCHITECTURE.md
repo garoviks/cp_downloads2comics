@@ -99,7 +99,7 @@ Both apps encode assumptions about the library that the library does not satisfy
 | Comics at depth 2 or deeper | **13,829 (46%)** |
 | Deepest nesting observed | **6 levels** |
 | Top-level names with leading/trailing whitespace | **70** |
-| Multi-series "container" folders | **85**, holding **4,853 files (16%)** |
+| Multi-series "container" folders | **122 classified** (§2.2 — the earlier "85" is superseded) |
 | Files not visible to the Volume Builder (`.zip`/`.rar`) | 3 |
 
 ### 2.1 46% of the library is deeper than either tool looks — by design
@@ -113,23 +113,31 @@ nothing will recurse. Instead the *root* becomes a parameter, so a nested folder
 pointed at directly and become level 0 for that run. The Builder already supports this
 (`--root`, `/api/browse`); the Organiser does not (`SRC_DIR`/`DEST_DIR`, `:58-59`).
 
-### 2.2 Finding: 85 container folders break "one folder = one series"
+### 2.2 Finding: container folders break "one folder = one series"
 
 Folders that hold many unrelated series. Both apps assume a folder *is* a series.
 
+> **The original "85 folders / 4,853 files" count does not reproduce, and should not be
+> quoted.** It was measured with the pre-`parse_release` splitter, which recorded
+> `2000AD prog` as *2500 files / 2493 series* — one "series" per issue, because it never
+> removed the issue number. The same folder is 220 series under `parse_release`. The census
+> was rebuilt for O16; the figure that means anything now is **122 folders classified by
+> hand** in `.comic_containers.md`, because no count separates a container from an ordinary
+> series folder (see §10.7 O16).
+
 ```
-2500 files / 2493 series   2000AD prog
- 469 files /  353 series   Europe Comics (Collection)
+2512 files /  220 series   2000AD prog
+ 469 files /  350 series   Europe Comics (Collection)
+ 309 files /  269 series   Hellboy
  157 files /  157 series   Civil War II (Story Arc) (2016-2017)
- 141 files /   95 series   Humanoids (Europe)
- 109 files /  103 series   2000AD - Collections␣          <- trailing space
-  89 files /   54 series   Jodorowsky and Moebius
+ 141 files /   93 series   Humanoids (Europe)
+ 109 files /   79 series   2000AD - Collections␣          <- trailing space
+  89 files /   68 series   Jodorowsky and Moebius
   58 files /   51 series   Image comics
   45 files /   45 series   Millennium (1988)
   44 files /   44 series   Aftershock comics
-  36 files /   33 series   Mark Millar
-  34 files /   32 series   Fantagraphics (Europe)
-  33 files /   28 series   Neil Gaiman Library
+  41 files /   40 series   Mark Millar
+  37 files /   35 series   Neil Gaiman Library
 ```
 
 They fall into distinct kinds — publisher, creator, event/crossover, anthology — and they
@@ -173,7 +181,7 @@ the Status column were decided by you, not read off the code — see §8.4 for e
 | O13 | Collected editions and single issues share one series folder | **settled §8.4 Q1** — already implemented |
 | O14 | Arcs/spin-offs go to the most specific folder that exists, else the parent | **settled §8.4 Q2** — parent-only today; see §4.3 |
 | O15 | Confine all writes to the library root | **implemented** — `resolve_under_dest`/`is_plain_name`, §5.2 |
-| O16 | Never auto-file into creator or event containers; publisher containers are fine | **settled §8.4 Q3 + step 7** — exact-match-only, franchise shelves added; not implemented, §10.7 |
+| O16 | Never auto-file into creator or event containers; publisher containers are fine | **settled §8.4 Q3 + step 7** — exact-match-only, franchise shelves added; ✅ implemented, §10.7 |
 | O17 | The library root is a parameter, not a constant | **implemented** — both folders now reach the mover; §10.7 |
 | O18 | The Organiser owns the parser; the Builder imports it from the sibling repo | **settled 2026-09-11** — §8.5, no third repo |
 | O19 | What the Builder should do with a group whose files carry no ordinal | **settled + implemented** — new `review` status, §10.7; 16 groups demoted |
@@ -830,7 +838,7 @@ Incremental, each step independently verifiable, Phase 1's harness as the net.
 | **7a** ✅ done | Absolute paths in the exclusions `## Skipped Folders` section, so trailing-space names stay legible and the file stops rewriting on every scan | 5 tests; the no-op rewrite is caught by counting `write_exclusions` calls, not by comparing bytes |
 | **7b** ✅ done | **O19** — demote ordinal-less groups to a new `review` status, excluded from *Select All* | 16 groups `ready` → `review`, nothing else moves; 3 mutations, 3 distinct failures — §10.7 |
 | **7c** ✅ done | Unify `COMIC_EXTS` to `.cbz`/`.cbr` across both tools | 0 files dropped; the source dir holds zero `.zip`/`.rar` — §10.7 |
-| **7d** | **O16** container gating — classify ~109 container folders, exact-series-match only, franchise shelves included | not started; only a 4-entry set in `prototype/` exists — §10.7 |
+| **7d** | **O16** container gating — classify container folders, exact-series-match only, franchise shelves included | ✅ done — 122 folders classified in `.comic_containers.md`; gate in `find_matches()` — §10.7 |
 | **7e** ✅ done | **O17** rebasable root — `--src`/`--dest` on `comic_mover.py`, wired through `serve_v2.py` and the UI | Was a live defect, not just a missing flag: scan and move used different libraries. 15 tests, 3 mutations — §10.7 |
 
 Steps 3, 3b, 8 and 9 were pulled ahead of the shared-module work and the table reordered
@@ -864,7 +872,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **103 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **130 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -1324,7 +1332,7 @@ narrowing as a loss of function and was wrong: the source directory holds **52 `
 a business ebook the old set would have happily parsed as a comic release. Not a wider net
 for comics — a wider net for everything. 0 files dropped from the current corpus.
 
-#### O16 — container gating, with franchise shelves added ⬜ not implemented
+#### O16 — container gating, with franchise shelves added ✅ implemented
 
 Answer: **exact series match only** for container-shaped folders. While scoping this I
 found a gap in the settled §8.4 Q3 table — it buckets containers as publisher / anthology /
@@ -1332,18 +1340,58 @@ creator / event, and **franchise or character shelves fit none of them**:
 
 | shelf | files |
 |---|---|
-| `Star Trek` | 193 |
-| `Batman` | 152 |
-| `Hellboy` | 130 |
-| `Avengers` | 74 |
+| `Star Trek` | 209 |
+| `Batman` | 160 |
+| `Hellboy` | 309 |
+| `Avengers` | 87 |
 
-These are the dangerous ones: `Batman - Year One` is genuinely a Batman book, but so is
-half the DC line by name, and a prefix rule would sweep in everything. Exact-match-only
-makes the shelf inert for auto-filing without excluding it from the library.
+`Batman - Year One` is genuinely a Batman book, but so is half the DC line by name, and a
+prefix rule would sweep in everything. Exact-match-only makes the shelf inert for auto-
+filing without excluding it from the library.
 
-Remaining work is real: ~109 container-shaped folders need classifying, and production
-gating code does not exist yet — the only thing in the tree is a 4-entry `CREATOR_OR_EVENT`
-set in `prototype/match_downloads.py:49`.
+**What "exact" had to mean.** Every match into a container was *already* exact —
+`find_exact_match()` has no fuzzy path. Reading the rule as "exact match only" therefore
+describes the existing behaviour and changes nothing. The rule only bites once you notice
+that `parse_release()` offers **shortened** forms of a title as fallback candidates:
+`Star Trek - Deviations - Evermore` also answers to `Star Trek`, and it is that second
+candidate that reaches the shelf. So the gate is one distinction — a container accepts the
+file's **own** series and refuses a shortened form of it — and `find_matches()` is the only
+place that knows which candidate is which.
+
+**Shape cannot classify; only a person can.** Counting distinct series per folder finds
+containers and ordinary folders alike: `Lumberjanes` parses as 12 series, `Something is
+Killing the Children` as 11, because their arcs parse apart. The list is therefore curated
+— `.comic_containers.md` in the **library root**, not in this repo, because it describes a
+library and the root is rebasable (O17). 122 folders classified: 10 publisher, 13
+anthology, 57 franchise, 38 creator, 4 event.
+
+Shape survives only as the fail-safe for shelves added *after* the list was written
+(`UNCLASSIFIED_CONTAINER_SERIES = 20`), set high on purpose so it clears the real series
+folders above. The curated entry is checked **first** — otherwise `Europe Comics
+(Collection)` (350 series) would read as `unknown` and O6 publisher routing would stop.
+
+**Measured cost, before shipping.** Gate on vs gate off over 118 real downloads against the
+real library, both runs through the same `find_matches()`:
+
+| | matched |
+|---|---|
+| before | 70 |
+| after | 62 |
+
+All 8 changes are franchise shelves losing a shortened-title match: 3 × `Star Trek`,
+2 × `The Rocketeer`, 2 × `Grimm Fairy Tales`, 1 × `ThunderCats`. Zero publisher, anthology,
+creator or event matches changed — **no download in the sample was filing into a creator or
+event shelf**, so the harm the §8.4 Q3 table guards against was already not happening.
+
+Two genuine misfiles the gate does **not** fix, because neither target is a container:
+`Supernatural - Wayward Special 001` → `Supernatural (2025)` (4 files, one series) and
+`Twilight Zone - Stories from the Fifth Dimension` → `The Twilight Zone` (5 files, one
+series). A shortened title reaching a *single-series* folder is the same defect pointed the
+other way, and it is still open.
+
+Eight mutations of the gate, all killed — including "creator/event fail open", "the curated
+list loses to the shape", and "a missing containers file fails closed", which would refuse
+every destination in an unclassified library.
 
 #### O17 — rebasable root ✅ implemented, and it was a live defect
 
