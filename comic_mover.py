@@ -104,6 +104,37 @@ def read_csv() -> List[Dict]:
                 rows.append(row)
     return rows
 
+def check_csv_destination(rows: List[Dict]) -> None:
+    """Refuse a CSV that was generated against a different library.
+
+    Every destination in the CSV is a bare name, joined onto DEST_DIR at move
+    time, so the file only means anything paired with the root it was scanned
+    against. O17 made the scan and the move agree within a single action; this
+    covers the gap across two:
+
+        scan library A  ->  switch the picker to B  ->  move without rescanning
+
+    The rows still describe A's folder layout — 'Has Existing Folder: YES' refers
+    to a folder in A — while every name gets joined onto B. Nothing about that is
+    visible in the output; folders are simply created and files land in a library
+    the analysis never looked at.
+
+    An ABSENT stamp is not an error. CSVs generated before this column existed
+    have no value to check, and failing on them would break every file already on
+    disk for no safety gain. Only a present-and-different stamp refuses.
+    """
+    stamped = next((r.get('Scanned Destination', '') or '' for r in rows), '').strip()
+    if not stamped:
+        return
+    if Path(os.path.realpath(stamped)) != Path(os.path.realpath(DEST_DIR)):
+        print("❌ This CSV was generated against a different library.")
+        print(f"   CSV was scanned against: {stamped}")
+        print(f"   Current destination:     {DEST_DIR}")
+        print("   Rescan before moving — the folder matches in this CSV describe")
+        print("   the other library, not this one.")
+        sys.exit(1)
+
+
 def loose_right_files(row: Dict[str, str]) -> List[Path]:
     """Loose library-root files the generator says belong with this series.
 
@@ -558,6 +589,7 @@ Examples:
     # Read CSV and plan moves
     print(f"📖 Reading CSV: {CSV_FILE}")
     rows = read_csv()
+    check_csv_destination(rows)
     print(f"✅ Loaded {len(rows)} rows\n")
 
     # Apply user overrides if provided

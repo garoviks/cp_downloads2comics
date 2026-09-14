@@ -898,7 +898,7 @@ def main():
             "Action Type", "Suggested Folder Name", "Right Panel Matches (Count)",
             "Has Existing Folder", "Has Existing Files", "Consolidation Strategy",
             "Move Source", "Files Details", "Right Loose Files", "Proposed Filename",
-            "Proposed Files Details",
+            "Proposed Files Details", "Scanned Destination",
         ]
         output_dir = OUTPUT_FILE.parent
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1099,6 +1099,16 @@ def main():
         "Right Loose Files",
         "Proposed Filename",
         "Proposed Files Details",
+        # Which library this analysis describes. Every destination in this file is
+        # a BARE NAME — 'Saga (2012)', not a path — so a row only means anything
+        # paired with the root it was scanned against. Recording it lets the mover
+        # refuse a CSV built for a different library (REQUIREMENTS:174, one
+        # source/destination pair per session).
+        #
+        # A column rather than a sidecar file on purpose: the stamp has to travel
+        # with the CSV. A separate file can be left behind by a copy or a move,
+        # which is the same class of separation the stamp exists to detect.
+        "Scanned Destination",
     ]
 
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
@@ -1107,6 +1117,7 @@ def main():
         for row in rows:
             # Keep only CSV columns, ignore 'Confidence' (internal use only)
             output_row = {col: row.get(col, "") for col in csv_columns}
+            output_row["Scanned Destination"] = str(DEST_DIR)
             writer.writerow(output_row)
 
     print(f"✅ CSV written to: {OUTPUT_FILE}\n")

@@ -30,17 +30,23 @@ import paths
 
 mover = paths.load_mover()
 
-CSV_COLUMNS = [
+LEGACY_COLUMNS = [
     "Left Folder", "File Count", "Left Panel File", "Series Name", "Action Type",
     "Suggested Folder Name", "Right Panel Matches (Count)", "Has Existing Folder",
     "Has Existing Files", "Consolidation Strategy", "Move Source", "Files Details",
     "Right Loose Files", "Proposed Filename", "Proposed Files Details",
 ]
+CSV_COLUMNS = LEGACY_COLUMNS + ["Scanned Destination"]
 
 
-def _write_fixture(tmp):
-    """A source holding one file and a CSV, plus two candidate destinations."""
+def _write_fixture(tmp, stamp=None, columns=None):
+    """A source holding one file and a CSV, plus two candidate destinations.
+
+    `stamp` sets 'Scanned Destination'; `columns` lets a test write a CSV in the
+    OLD format, with that column absent entirely.
+    """
     import csv
+    cols = columns if columns is not None else CSV_COLUMNS
     src = os.path.join(tmp, 'src')
     dest_a = os.path.join(tmp, 'destA')
     dest_b = os.path.join(tmp, 'destB')
@@ -50,13 +56,15 @@ def _write_fixture(tmp):
     os.makedirs(os.path.join(dest_b, 'Saga (2012)'))
     open(os.path.join(src, 'Saga 025.cbr'), 'w').close()
 
-    row = {c: '' for c in CSV_COLUMNS}
+    row = {c: '' for c in cols}
     row.update({'Left Panel File': 'Saga 025.cbr', 'Series Name': 'Saga',
                 'Action Type': 'CONSOLIDATE', 'Suggested Folder Name': 'Saga (2012)',
                 'Has Existing Folder': 'YES', 'Move Source': 'Saga 025.cbr'})
+    if stamp is not None and 'Scanned Destination' in cols:
+        row['Scanned Destination'] = stamp
     with open(os.path.join(src, 'matching_analysis_consolidated.csv'),
               'w', newline='') as f:
-        w = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+        w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         w.writerow(row)
     return src, dest_a, dest_b
@@ -137,6 +145,62 @@ class TestConfinementFollowsTheNewRoot(unittest.TestCase):
         depth = len(mover.DEST_DIR.resolve().parts) - 1
         escape = os.path.join(*(['..'] * depth), paths.LIBRARY_ROOT.lstrip('/'))
         self.assertIsNone(mover.resolve_under_dest(escape))
+
+
+class TestStaleCsvIsRefused(unittest.TestCase):
+    """A CSV generated against library A must not be executed against library B.
+
+    O17 made scan and move agree within one action. This is the gap across two:
+    scan A, switch the picker to B, move without rescanning. Every destination in
+    the CSV is a bare name joined onto DEST_DIR at move time, so the rows still
+    describe A's layout while the files land in B — silently.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix='o17-stamp-')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_matching_stamp_proceeds(self):
+        src, dest_a, _ = _write_fixture(self.tmp, stamp=os.path.join(self.tmp, 'destA'))
+        out = _dry_run(src, dest_a)
+        self.assertIn('Saga (2012)', out)
+        self.assertNotIn('generated against a different library', out)
+
+    def test_mismatched_stamp_refuses(self):
+        src, _, dest_b = _write_fixture(self.tmp, stamp=os.path.join(self.tmp, 'destA'))
+        out = _dry_run(src, dest_b)
+        self.assertIn('generated against a different library', out)
+
+    def test_refusal_happens_before_any_move_is_planned(self):
+        """Refusing after planning would still print a plan for the wrong library."""
+        src, _, dest_b = _write_fixture(self.tmp, stamp=os.path.join(self.tmp, 'destA'))
+        out = _dry_run(src, dest_b)
+        self.assertNotIn('Planned', out)
+        self.assertNotIn('MOVE:', out)
+
+    def test_a_csv_without_the_column_still_works(self):
+        """Backwards compatibility: CSVs predating the stamp must not break.
+
+        Failing on an absent stamp would reject every CSV already on disk while
+        adding no safety — there is nothing to compare against.
+        """
+        src, dest_a, _ = _write_fixture(self.tmp, columns=LEGACY_COLUMNS)
+        out = _dry_run(src, dest_a)
+        self.assertIn('Saga (2012)', out)
+        self.assertNotIn('generated against a different library', out)
+
+    def test_a_blank_stamp_is_treated_as_absent(self):
+        src, dest_a, _ = _write_fixture(self.tmp, stamp='   ')
+        self.assertNotIn('generated against a different library', _dry_run(src, dest_a))
+
+    def test_trailing_slash_is_not_a_mismatch(self):
+        """'/tmp/x' and '/tmp/x/' are the same library; realpath normalises both."""
+        src, dest_a, _ = _write_fixture(self.tmp,
+                                        stamp=os.path.join(self.tmp, 'destA') + '/')
+        self.assertNotIn('generated against a different library', _dry_run(src, dest_a))
 
 
 class TestServerPassesTheFoldersOn(unittest.TestCase):

@@ -864,7 +864,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **97 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **103 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -1393,12 +1393,25 @@ CSV read from the fixture, files targeted at `/mnt/extramedia/Comics`.
 command assembled inline in a request handler is reachable only by booting a server and
 parsing streamed output, and the defect lived in that command.
 
-**Still open — the stale-CSV window.** The fix makes scan and move agree when you scan and
-then move. It does not cover: scan library A → change the picker to library B → move without
-rescanning. The CSV still describes A's folder layout while the mover joins those names onto
-B. A destination stamp in the CSV, checked by the mover before planning, would close it and
-enforce `REQUIREMENTS:174` *"single source/destination pair per session"* rather than
-trusting it. Not implemented — awaiting your call, as it changes the CSV format.
+**The stale-CSV window ✅ closed.** The fix above makes scan and move agree within one
+action. It did not cover two: scan library A → change the picker to B → move without
+rescanning. The CSV still described A's layout while the mover joined those bare names onto
+B, silently.
+
+The generator now writes a `Scanned Destination` column and the mover refuses before
+planning anything. A column rather than a sidecar file because the stamp has to travel with
+the CSV — a separate file can be left behind by a copy, which is the same separation the
+stamp exists to detect. Invisible in the UI: `comic_organizer_v2.html` reads fields by name
+(`:1153`) and its table headers are hardcoded (`:637`), so an added column is ignored.
+
+**An absent stamp is not an error.** Every CSV already on disk predates the column; failing
+on those would reject real work for no safety gain, since there is nothing to compare. Only
+a present-and-different stamp refuses. Two mutations confirm both halves: removing the check
+fails 2 tests, and removing the absent-stamp fallback fails 4 — the latter being the
+regression that would have broken your existing CSV.
+
+This enforces `REQUIREMENTS:174` *"single source/destination pair per session"* mechanically
+instead of trusting it.
 
 ---
 
