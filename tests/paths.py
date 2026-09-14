@@ -30,6 +30,14 @@ def load_mover():
     return comic_mover
 
 
+def load_serve_v2():
+    """Import serve_v2. Safe: it is guarded by __main__, so no port is bound."""
+    if GENERATOR_DIR not in sys.path:
+        sys.path.insert(0, GENERATOR_DIR)
+    import serve_v2
+    return serve_v2
+
+
 def load_release():
     """Import release — the filename parser the generator derives series names with."""
     if GENERATOR_DIR not in sys.path:

@@ -25,6 +25,28 @@ SRC_DIR = Path("/home/nesha/Downloads/comics_download/")
 DEST_DIR = Path("/mnt/extramedia/Comics")
 
 
+def mover_cmd(mode, src, dest, overrides_file=None, selected_ids=None):
+    """The comic_mover.py command line for a dry run or an execute.
+
+    A module-level function purely so it can be tested. O17 was a missing pair of
+    arguments here — the mover was launched with no folders and silently used its
+    own hardcoded ones — and a command assembled inline inside a request handler
+    is reachable only by booting a server and parsing its streamed output. The
+    defect lived at this boundary, so this boundary is what the tests need.
+
+    `mode` is trusted: it is supplied by the two call sites below, never by a
+    request.
+    """
+    cmd = ["python3", "comic_mover.py"]
+    cmd += ["--dry-run"] if mode == "dry-run" else ["--execute", "--no-confirm"]
+    cmd += ["--src", str(src), "--dest", str(dest)]
+    if overrides_file:
+        cmd += ["--overrides", overrides_file]
+    if selected_ids:
+        cmd += ["--selected-ids", ",".join(str(i) for i in selected_ids)]
+    return cmd
+
+
 class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
     """HTTP handler for v2.0 with streaming support."""
 
@@ -121,8 +143,7 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
     def handle_scan(self):
         """Handle scan request - regenerate CSV from folders."""
         body = self.read_post_json()
-        src_dir = body.get("src_dir", "/home/nesha/Downloads/comics_download/").strip()
-        dest_dir = body.get("dest_dir", "/mnt/extramedia/Comics").strip()
+        src_dir, dest_dir = self.folder_pair(body)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -153,6 +174,22 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             self.wfile.write(f"ERROR: {str(e)}".encode())
 
+    def folder_pair(self, body):
+        """The source/destination pair this request works on (O17).
+
+        Both are pickable in the UI (REQUIREMENTS FR:132) and must reach EVERY
+        subprocess, not just the generator. comic_mover.py used to be launched with
+        no folders at all, so it fell back to its own hardcoded pair: picking a
+        different library scanned one place and moved into another, and picking a
+        different source left it reading a CSV the generator had written elsewhere.
+
+        Falling back to the module constants rather than repeating the literals, so
+        the default lives in exactly one place.
+        """
+        src = (body.get("src_dir") or "").strip() or str(SRC_DIR)
+        dest = (body.get("dest_dir") or "").strip() or str(DEST_DIR)
+        return src, dest
+
     def read_post_json(self):
         """Read JSON body from POST request. Returns dict or {}."""
         try:
@@ -177,6 +214,7 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         body = self.read_post_json()
         overrides = body.get("overrides", [])
         selected_ids = body.get("selected_ids", [])
+        src_dir, dest_dir = self.folder_pair(body)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -186,12 +224,9 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
 
         overrides_file = None
         try:
-            cmd = ["python3", "comic_mover.py", "--dry-run"]
             if overrides:
                 overrides_file = self.write_overrides_file(overrides)
-                cmd += ["--overrides", overrides_file]
-            if selected_ids:
-                cmd += ["--selected-ids", ",".join(str(i) for i in selected_ids)]
+            cmd = mover_cmd("dry-run", src_dir, dest_dir, overrides_file, selected_ids)
 
             process = subprocess.Popen(
                 cmd,
@@ -218,6 +253,7 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         body = self.read_post_json()
         overrides = body.get("overrides", [])
         selected_ids = body.get("selected_ids", [])
+        src_dir, dest_dir = self.folder_pair(body)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -227,12 +263,9 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
 
         overrides_file = None
         try:
-            cmd = ["python3", "comic_mover.py", "--execute", "--no-confirm"]
             if overrides:
                 overrides_file = self.write_overrides_file(overrides)
-                cmd += ["--overrides", overrides_file]
-            if selected_ids:
-                cmd += ["--selected-ids", ",".join(str(i) for i in selected_ids)]
+            cmd = mover_cmd("execute", src_dir, dest_dir, overrides_file, selected_ids)
 
             process = subprocess.Popen(
                 cmd,

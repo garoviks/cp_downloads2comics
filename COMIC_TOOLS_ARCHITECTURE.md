@@ -174,7 +174,7 @@ the Status column were decided by you, not read off the code — see §8.4 for e
 | O14 | Arcs/spin-offs go to the most specific folder that exists, else the parent | **settled §8.4 Q2** — parent-only today; see §4.3 |
 | O15 | Confine all writes to the library root | **implemented** — `resolve_under_dest`/`is_plain_name`, §5.2 |
 | O16 | Never auto-file into creator or event containers; publisher containers are fine | **settled §8.4 Q3 + step 7** — exact-match-only, franchise shelves added; not implemented, §10.7 |
-| O17 | The library root is a parameter, not a constant | **settled §8.4 Q6** — Builder yes, Organiser no (`:58-59`); not implemented, §10.7 |
+| O17 | The library root is a parameter, not a constant | **implemented** — both folders now reach the mover; §10.7 |
 | O18 | The Organiser owns the parser; the Builder imports it from the sibling repo | **settled 2026-09-11** — §8.5, no third repo |
 | O19 | What the Builder should do with a group whose files carry no ordinal | **settled + implemented** — new `review` status, §10.7; 16 groups demoted |
 
@@ -831,7 +831,7 @@ Incremental, each step independently verifiable, Phase 1's harness as the net.
 | **7b** ✅ done | **O19** — demote ordinal-less groups to a new `review` status, excluded from *Select All* | 16 groups `ready` → `review`, nothing else moves; 3 mutations, 3 distinct failures — §10.7 |
 | **7c** ✅ done | Unify `COMIC_EXTS` to `.cbz`/`.cbr` across both tools | 0 files dropped; the source dir holds zero `.zip`/`.rar` — §10.7 |
 | **7d** | **O16** container gating — classify ~109 container folders, exact-series-match only, franchise shelves included | not started; only a 4-entry set in `prototype/` exists — §10.7 |
-| **7e** | **O17** rebasable root — `--dest` for `serve_v2.py`, `matching_analysis_generator.py`, `comic_mover.py` | not started; must not loosen `resolve_under_dest` confinement — §10.7 |
+| **7e** ✅ done | **O17** rebasable root — `--src`/`--dest` on `comic_mover.py`, wired through `serve_v2.py` and the UI | Was a live defect, not just a missing flag: scan and move used different libraries. 15 tests, 3 mutations — §10.7 |
 
 Steps 3, 3b, 8 and 9 were pulled ahead of the shared-module work and the table reordered
 to match. Each is self-contained and touches no code the refactor depends on: 3 and 3b
@@ -864,7 +864,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **82 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **97 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -1345,13 +1345,60 @@ Remaining work is real: ~109 container-shaped folders need classifying, and prod
 gating code does not exist yet — the only thing in the tree is a 4-entry `CREATOR_OR_EVENT`
 set in `prototype/match_downloads.py:49`.
 
-#### O17 — rebasable root ⬜ not implemented
+#### O17 — rebasable root ✅ implemented, and it was a live defect
 
-`DEST_DIR = Path("/mnt/extramedia/Comics")` is hardcoded in `serve_v2.py:25`,
-`matching_analysis_generator.py:61` and `comic_mover.py:27`. The pattern to copy already
-exists (`matching_analysis_generator.py:873` has `--dest`). This one needs care rather than
-volume: it touches `comic_mover.resolve_under_dest`, which is the confinement check behind
-N4/Q7i, and a rebasable root that loosens confinement is worse than a hardcoded one.
+Scoped as "replace a constant with a flag". It was not. Both folders are already pickable
+in the UI — `REQUIREMENTS FR:132`, *"Folder picker modals for source and destination
+paths"* — and those pickers reached `matching_analysis_generator.py` via `--src`/`--dest`
+and **stopped there**. `serve_v2.py` launched `comic_mover.py` with neither, so the mover
+fell back to its own constants at `comic_mover.py:26-28`. Two silent failures:
+
+| you change | the scan uses | the move uses |
+|---|---|---|
+| destination | the library you picked | **the hardcoded one** |
+| source | the CSV the generator just wrote there | **a stale CSV, or none** |
+
+Picking a different destination therefore analysed library B and wrote into library A, with
+the CSV's `Has Existing Folder: YES` describing a folder the files never reached. The
+subprocess boundary is what hid it: nothing fails when an argument is simply never passed.
+
+Fixed in three places, because a flag on the mover alone would have changed nothing:
+`comic_mover.py` gained `--src`/`--dest` (setting `SRC_DIR`, `DEST_DIR` and the derived
+`CSV_FILE` before any path is built), `serve_v2.py` now sends both on dry-run and execute,
+and `comic_organizer_v2.html` sends the picked pair with those two calls — it previously
+sent them only with `/api/scan`.
+
+**Confinement was re-aimed, not loosened.** `resolve_under_dest` reads `DEST_DIR` at call
+time, so it now confines to whichever library is selected. `TestConfinementFollowsTheNewRoot`
+pins that directly, including the case that matters most: from a rebased root, naming the
+*original* library must still be refused. A guard that kept confining to the startup root
+would read as protection while permitting every write into the newly-selected library to
+escape.
+
+> I initially proposed making the root a server-startup flag with the UI picker read-only,
+> on the grounds that a caller-chosen write root defeats confinement — the reasoning behind
+> the Builder's `ALLOWED_ROOT`. That was wrong here, and the correction was yours: the two
+> tools have different threat models. The Builder is a fixed single-library tool whose HTML
+> has no picker; the Organiser is a two-pane source→destination mover whose pickers are a
+> stated requirement. The caller *is* the user, at loopback (`serve_v2.py:345`), so the
+> realistic fault is a typo — which is exactly what `resolve_under_dest` still catches.
+> Reading the requirements doc first would have saved a wrong recommendation.
+
+15 tests. Three mutations, each caught: dropping `--dest` in the mover, dropping the folder
+arguments in the server command, and weakening the blank-string fallback so `""` would reach
+the mover and resolve to the process cwd. The first reproduces the original bug exactly —
+CSV read from the fixture, files targeted at `/mnt/extramedia/Comics`.
+
+`mover_cmd()` was extracted to module level in `serve_v2.py` purely so this is testable: a
+command assembled inline in a request handler is reachable only by booting a server and
+parsing streamed output, and the defect lived in that command.
+
+**Still open — the stale-CSV window.** The fix makes scan and move agree when you scan and
+then move. It does not cover: scan library A → change the picker to library B → move without
+rescanning. The CSV still describes A's folder layout while the mover joins those names onto
+B. A destination stamp in the CSV, checked by the mover before planning, would close it and
+enforce `REQUIREMENTS:174` *"single source/destination pair per session"* rather than
+trusting it. Not implemented — awaiting your call, as it changes the CSV format.
 
 ---
 

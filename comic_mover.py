@@ -497,6 +497,8 @@ def rollback():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
+    global SRC_DIR, DEST_DIR, CSV_FILE
+
     parser = argparse.ArgumentParser(
         description="Comic File Organizer — Move orchestration script",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -519,8 +521,26 @@ Examples:
                         help="Path to JSON file with user overrides [{left_file, series_name, dest_folder}]")
     parser.add_argument("--selected-ids", type=str, default=None,
                         help="Comma-separated 0-based row indices to process (omit for all rows)")
+    parser.add_argument("--src", type=str, default=None,
+                        help=f"Source directory, and where the CSV is read from (default: {SRC_DIR})")
+    parser.add_argument("--dest", type=str, default=None,
+                        help=f"Destination library root (default: {DEST_DIR})")
 
     args = parser.parse_args()
+
+    # O17. Both folders are pickable in the UI (REQUIREMENTS FR:132), and before
+    # this the pickers reached the generator but not this script: it kept its own
+    # hardcoded pair. Choosing a different library therefore scanned one place and
+    # moved into another, and choosing a different source left it reading a CSV
+    # the generator had just written somewhere else.
+    #
+    # Set here, once, before any path is derived — CSV_FILE hangs off SRC_DIR, and
+    # resolve_under_dest/get_loose_files close over DEST_DIR at call time.
+    if args.src:
+        SRC_DIR = Path(args.src)
+        CSV_FILE = SRC_DIR / "matching_analysis_consolidated.csv"
+    if args.dest:
+        DEST_DIR = Path(args.dest)
 
     # Validate directories
     if not SRC_DIR.exists():
