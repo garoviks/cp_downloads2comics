@@ -25,7 +25,8 @@ SRC_DIR = Path("/home/nesha/Downloads/comics_download/")
 DEST_DIR = Path("/mnt/extramedia/Comics")
 
 
-def mover_cmd(mode, src, dest, overrides_file=None, selected_ids=None):
+def mover_cmd(mode, src, dest, overrides_file=None, selected_ids=None,
+              duplicate_decisions_file=None):
     """The comic_mover.py command line for a dry run or an execute.
 
     A module-level function purely so it can be tested. O17 was a missing pair of
@@ -44,7 +45,114 @@ def mover_cmd(mode, src, dest, overrides_file=None, selected_ids=None):
         cmd += ["--overrides", overrides_file]
     if selected_ids:
         cmd += ["--selected-ids", ",".join(str(i) for i in selected_ids)]
+    if duplicate_decisions_file:
+        cmd += ["--duplicate-decisions", duplicate_decisions_file]
     return cmd
+
+
+MATCHING_RULES_FILE = ".comic_matching_rules.md"
+RULE_DECISIONS = ("accept", "refuse")
+
+RULES_TEMPLATE = """# Comic Organiser — Saved Matching Rules
+
+Decisions you made in the Organiser about shortened-title matching, saved so the
+same judgement is never asked for twice. A rule names a FOLDER, not a file, and
+overrides `.comic_containers.md` in both directions.
+
+## Accept (0)
+
+Shortened titles may be filed into these folders.
+
+## Refuse (0)
+
+Shortened titles may not be filed into these folders. A folder's own series
+still files here normally.
+"""
+
+
+def clean_rule_folder(folder: str) -> str:
+    """The folder name a rule may name, or ValueError explaining why not.
+
+    This value arrives in a POST body and is written verbatim into a file whose
+    every line is meaningful, so the checks are about the FILE FORMAT, not about
+    taste. A name containing a newline could write its own `## ` heading or its
+    own `- ` bullets and grant permissions nobody asked for; a name containing a
+    slash is not a top-level folder name at all, which is the only thing the
+    matcher ever compares against.
+    """
+    folder = (folder or "").strip()
+    if not folder:
+        raise ValueError("no folder given")
+    # Newlines are the dangerous ones — \n and \r both end a line for
+    # splitlines(), so either would let a name write its own '## ' heading or
+    # its own '- ' bullets. Rejecting every control character rather than just
+    # those two because none of them belong in a folder name anyway, and one
+    # check cannot drift out of step with another.
+    if any(ord(c) < 32 for c in folder):
+        raise ValueError("a folder name cannot contain control characters")
+    if "/" in folder or "\\" in folder:
+        raise ValueError("a rule names a top-level folder, not a path")
+    return folder
+
+
+def save_matching_rule(rules_path: Path, folder: str, decision: str) -> str:
+    """Record one Accept/Refuse decision, and return what was done.
+
+    Rewrites in place rather than appending, because the same folder may already
+    be ruled on the other way — answering 'actually, refuse that' has to REPLACE
+    the earlier yes, not sit beneath it where the first match would win.
+
+    The prose under each heading is preserved: this file is meant to be read and
+    hand-edited, and a writer that rebuilt it from the entries alone would strip
+    the explanation the moment you clicked a button.
+    """
+    folder = clean_rule_folder(folder)
+    decision = (decision or "").strip().lower()
+    if decision not in RULE_DECISIONS:
+        raise ValueError(f"decision must be one of {RULE_DECISIONS}")
+
+    text = rules_path.read_text(encoding="utf-8") if rules_path.exists() else RULES_TEMPLATE
+    lines = text.splitlines()
+
+    # Drop any existing ruling on this folder, in either section.
+    target = folder.lower()
+    lines = [ln for ln in lines
+             if not (ln.startswith("- ") and ln[2:].strip().lower() == target)]
+
+    heading = decision.capitalize()
+    section_starts = [i for i, ln in enumerate(lines) if ln.startswith("## ")]
+    try:
+        start = next(i for i in section_starts
+                     if lines[i][3:].split("(")[0].strip().lower() == decision)
+    except StopIteration:
+        # A hand-edited file that lost the section. Re-add it rather than fail:
+        # the alternative is a button that silently does nothing.
+        lines += ["", f"## {heading} (0)", ""]
+        start = len(lines) - 2
+
+    end = next((i for i in section_starts if i > start), len(lines))
+    bullets = [i for i in range(start + 1, end) if lines[i].startswith("- ")]
+    if bullets:
+        at = next((i for i in bullets if lines[i][2:].strip().lower() > target),
+                  bullets[-1] + 1)
+    else:
+        # No entries yet: sit after the section's prose, before its blank tail.
+        at = end
+        while at > start + 1 and not lines[at - 1].strip():
+            at -= 1
+        lines.insert(at, "")
+        at += 1
+    lines.insert(at, f"- {folder}")
+
+    # Refresh every '## Heading (n)' so the counts stay honest.
+    section_starts = [i for i, ln in enumerate(lines) if ln.startswith("## ")]
+    for n, i in enumerate(section_starts):
+        stop = section_starts[n + 1] if n + 1 < len(section_starts) else len(lines)
+        count = sum(1 for j in range(i + 1, stop) if lines[j].startswith("- "))
+        lines[i] = f"## {lines[i][3:].split('(')[0].strip()} ({count})"
+
+    rules_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return f"{heading}: {folder}"
 
 
 class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
@@ -89,6 +197,10 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
 
         if path == "/api/rescan-series":
             self.handle_rescan_series()
+            return
+
+        if path == "/api/save-rule":
+            self.handle_save_rule()
             return
 
         self.send_error(404)
@@ -200,12 +312,17 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
             pass
         return {}
 
-    def write_overrides_file(self, overrides: list) -> str:
-        """Write overrides list to a temp JSON file. Returns file path."""
+    def write_temp_json(self, payload) -> str:
+        """Write a POST-body value to a temp JSON file. Returns file path.
+
+        The mover takes both overrides and duplicate decisions as files rather
+        than arguments: either can be long enough to exceed a command line, and
+        both are arbitrary filenames, which have no business on one.
+        """
         tf = tempfile.NamedTemporaryFile(
             mode='w', suffix='.json', delete=False, dir='/tmp'
         )
-        json.dump(overrides, tf)
+        json.dump(payload, tf)
         tf.close()
         return tf.name
 
@@ -214,6 +331,7 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         body = self.read_post_json()
         overrides = body.get("overrides", [])
         selected_ids = body.get("selected_ids", [])
+        duplicate_decisions = body.get("duplicate_decisions", {})
         src_dir, dest_dir = self.folder_pair(body)
 
         self.send_response(200)
@@ -222,11 +340,14 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
-        overrides_file = None
+        overrides_file = decisions_file = None
         try:
             if overrides:
-                overrides_file = self.write_overrides_file(overrides)
-            cmd = mover_cmd("dry-run", src_dir, dest_dir, overrides_file, selected_ids)
+                overrides_file = self.write_temp_json(overrides)
+            if duplicate_decisions:
+                decisions_file = self.write_temp_json(duplicate_decisions)
+            cmd = mover_cmd("dry-run", src_dir, dest_dir, overrides_file, selected_ids,
+                            decisions_file)
 
             process = subprocess.Popen(
                 cmd,
@@ -245,14 +366,16 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             self.wfile.write(f"ERROR: {str(e)}".encode())
         finally:
-            if overrides_file and os.path.exists(overrides_file):
-                os.unlink(overrides_file)
+            for tmp in (overrides_file, decisions_file):
+                if tmp and os.path.exists(tmp):
+                    os.unlink(tmp)
 
     def handle_consolidate(self):
         """Handle consolidate request with streaming output. Accepts overrides in POST body."""
         body = self.read_post_json()
         overrides = body.get("overrides", [])
         selected_ids = body.get("selected_ids", [])
+        duplicate_decisions = body.get("duplicate_decisions", {})
         src_dir, dest_dir = self.folder_pair(body)
 
         self.send_response(200)
@@ -261,11 +384,14 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
-        overrides_file = None
+        overrides_file = decisions_file = None
         try:
             if overrides:
-                overrides_file = self.write_overrides_file(overrides)
-            cmd = mover_cmd("execute", src_dir, dest_dir, overrides_file, selected_ids)
+                overrides_file = self.write_temp_json(overrides)
+            if duplicate_decisions:
+                decisions_file = self.write_temp_json(duplicate_decisions)
+            cmd = mover_cmd("execute", src_dir, dest_dir, overrides_file, selected_ids,
+                            decisions_file)
 
             process = subprocess.Popen(
                 cmd,
@@ -284,8 +410,9 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             self.wfile.write(f"ERROR: {str(e)}".encode())
         finally:
-            if overrides_file and os.path.exists(overrides_file):
-                os.unlink(overrides_file)
+            for tmp in (overrides_file, decisions_file):
+                if tmp and os.path.exists(tmp):
+                    os.unlink(tmp)
 
     def handle_rescan_series(self):
         """Rescan matching logic for a single file with an overridden series name.
@@ -306,7 +433,7 @@ sys.path.insert(0, '/home/nesha/scripts/cp_downloads2comics/')
 import matching_analysis_generator as mag
 
 dest_map = mag.scan_destination_directory()
-matched, match_data, confidence = mag.find_matches(
+matched, match_data, confidence, blocked = mag.find_matches(
     {json.dumps(left_file)}, {json.dumps(new_series)}, dest_map
 )
 row = mag.generate_consolidation_strategy(
@@ -321,6 +448,8 @@ result = {{
     "Has Existing Files": row["Has Existing Files"],
     "Consolidation Strategy": row["Consolidation Strategy"],
     "Move Source": row["Move Source"],
+    "Confidence": confidence,
+    "Blocked Destination": blocked or "",
 }}
 print("RESCAN_JSON:" + json.dumps(result))
 """
@@ -352,6 +481,35 @@ print("RESCAN_JSON:" + json.dumps(result))
 
         except Exception as e:
             self.send_error(500, f"Error rescanning: {str(e)}")
+
+    def handle_save_rule(self):
+        """Record an Accept/Refuse decision against the CURRENT library root.
+
+        The root comes from the same folder_pair() every other endpoint uses, so
+        a rule saved while pointed at one library cannot land in another (O17).
+        """
+        body = self.read_post_json()
+        _src, dest_dir = self.folder_pair(body)
+
+        try:
+            message = save_matching_rule(
+                Path(dest_dir) / MATCHING_RULES_FILE,
+                body.get("folder", ""),
+                body.get("decision", ""),
+            )
+        except ValueError as e:
+            self.send_error(400, str(e))
+            return
+        except Exception as e:
+            self.send_error(500, f"Could not save rule: {e}")
+            return
+
+        payload = json.dumps({"saved": message}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
     def log_message(self, format, *args):
         """Override log format to be cleaner."""

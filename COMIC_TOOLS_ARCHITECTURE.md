@@ -185,6 +185,9 @@ the Status column were decided by you, not read off the code — see §8.4 for e
 | O17 | The library root is a parameter, not a constant | **implemented** — both folders now reach the mover; §10.7 |
 | O18 | The Organiser owns the parser; the Builder imports it from the sibling repo | **settled 2026-09-11** — §8.5, no third repo |
 | O19 | What the Builder should do with a group whose files carry no ordinal | **settled + implemented** — new `review` status, §10.7; 16 groups demoted |
+| O20 | Where the matcher cannot decide, flag the row and remember the answer | **implemented** — four-way `Confidence` + `Blocked Destination` in the CSV, `.comic_matching_rules.md`, two-button decide/undecide; §10.7 |
+| O21 | A source file must appear in exactly one plan row | **fixed** — STEP 1 and STEP 2 disagreed on how a file is named, so every file inside a subfolder was planned twice; §10.7 |
+| O22 | Report every book the library already holds more than once | **implemented** — `library_duplicates.py` writes `LIBRARY_DUPLICATES.md`, deletes nothing; §10.8 |
 
 ### 3.2 Volume Builder
 
@@ -840,6 +843,7 @@ Incremental, each step independently verifiable, Phase 1's harness as the net.
 | **7c** ✅ done | Unify `COMIC_EXTS` to `.cbz`/`.cbr` across both tools | 0 files dropped; the source dir holds zero `.zip`/`.rar` — §10.7 |
 | **7d** | **O16** container gating — classify container folders, exact-series-match only, franchise shelves included | ✅ done — 122 folders classified in `.comic_containers.md`; gate in `find_matches()` — §10.7 |
 | **7e** ✅ done | **O17** rebasable root — `--src`/`--dest` on `comic_mover.py`, wired through `serve_v2.py` and the UI | Was a live defect, not just a missing flag: scan and move used different libraries. 15 tests, 3 mutations — §10.7 |
+| **7f** ✅ done | **O20** flag what the matcher could not decide, and save the answer — `Confidence` + `Blocked Destination` in the CSV, marked rows and a one-click rule in the UI, `.comic_matching_rules.md` | Closes both misfiles O16 could not see. 13 of 119 rows flagged, and a ruled row settles; 34 tests, 18 mutations — §10.7 |
 
 Steps 3, 3b, 8 and 9 were pulled ahead of the shared-module work and the table reordered
 to match. Each is self-contained and touches no code the refactor depends on: 3 and 3b
@@ -872,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **130 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **200 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -896,7 +900,9 @@ cp_downloads2comics/tests/
 │                                the merge invariant, the 13 accepted merges
 ├── test_release.py              the parser itself, promoted from prototype/
 ├── test_matching.py             13 — whole-word publisher/specific matching
-└── test_mover_loose_files.py     7 — CSV column consumed verbatim
+├── test_mover_loose_files.py     7 — CSV column consumed verbatim
+├── test_library_duplicates.py   10 — the duplicate report's demotion rules
+└── test_duplicate_skip.py       16 — the flag, the decision, and the refusal
 ```
 
 **Why `TestAcceptedMerges` exists.** `baseline_series_keys.json` is a snapshot, so
@@ -1387,11 +1393,159 @@ Two genuine misfiles the gate does **not** fix, because neither target is a cont
 `Supernatural - Wayward Special 001` → `Supernatural (2025)` (4 files, one series) and
 `Twilight Zone - Stories from the Fifth Dimension` → `The Twilight Zone` (5 files, one
 series). A shortened title reaching a *single-series* folder is the same defect pointed the
-other way, and it is still open.
+other way. See O20 below — it is no longer open, but it was not closed by the gate.
 
 Eight mutations of the gate, all killed — including "creator/event fail open", "the curated
 list loses to the shape", and "a missing containers file fails closed", which would refuse
 every destination in an unclassified library.
+
+#### O20 — ask once, remember the answer ✅ implemented
+
+O16 gates on the **destination's** shape, but the defect is in the **candidate**. That
+mismatch bounds what any gate can do, in both directions:
+
+- it refuses shortened titles into `Star Trek` even when they belong there — 8 of the 8
+  measured losses above;
+- it cannot refuse them into `Supernatural (2025)`, which holds one series and is not a
+  container by any definition.
+
+No rule over filenames separates these. `Star Trek - Deviations` and
+`Supernatural - Wayward Special` are the same shape — *folder = series X, file = X - Y* —
+and only what the books **are** tells them apart. So the tools stop guessing and ask.
+
+**Provenance first.** `find_matches()` returns a fourth value and two new confidences.
+`EXACT_SHORTENED` says the destination was reached through the fallback candidate;
+`BLOCKED_CONTAINER` says a shelf was found and refused, and names it. Both were previously
+collapsed into `EXACT` and `NONE`, and `Confidence` was computed and then explicitly
+discarded on the way to the CSV as "internal use only" — which is why every row in the
+report looked equally certain. It is now a column, alongside `Blocked Destination`.
+
+Over the same 118 downloads this marks **13 rows**, and both still-open misfiles are among
+them:
+
+| confidence | rows | what it means |
+|---|---|---|
+| `EXACT_SHORTENED` | 5 | matched the long way round — includes both misfiles above |
+| `BLOCKED_CONTAINER` | 8 | O16 refused a shelf — `Star Trek` ×3, `The Rocketeer` ×2, `Grimm Fairy Tales` ×2, `ThunderCats` |
+
+**A decided row must stop asking.** The first cut offered each flagged row the single
+decision it seemed to want — blocked rows *accept this shelf*, shortened matches *refuse
+this folder*. Using it against the real library showed why that is wrong. Accepting
+`Grimm Fairy Tales` moved its two rows from `BLOCKED_CONTAINER` to `EXACT_SHORTENED`, so
+they stayed flagged, the count stayed at 13, and the button now read **"Never shorten into
+Grimm Fairy Tales"** — inviting you to undo what you had just done, with nothing on screen
+saying it had been done. `Confidence` recorded *how* a row matched but not *whether the
+question was still open*, and those are different facts.
+
+Hence two further confidences, `RULED_ACCEPT` and `RULED_REFUSE`, set when a saved rule made
+the call rather than the container classification. A ruled row loses its border, leaves the
+"Need Review" count, and shows a muted record of the decision in place of a warning. It
+keeps both buttons — a decision made in the UI has to be reversible in the UI — with the one
+in force marked active.
+
+Both answers are now always offered, in the same order and the same place, rather than
+whichever one the matcher happened to need. That is what removes the trap: the same folder
+can no longer present opposite buttons depending on which way it was last decided.
+
+Saving settles the row immediately rather than waiting for a rescan. Only the matcher can
+change how a row *matched*, so the destination cell is left alone and the note says
+"rescan to apply" — but the question is answered, and the count drops on the spot.
+
+The buttons sit under the review note in the destination column, not in the actions cell.
+That cell is the last column of a table about 3,800px wide, so a control there is off-screen
+on any ordinary display — established by rendering the real page headlessly at 1700, 2600
+and 3400px, at each of which the label was still sheared off. The note states the problem
+and the button answers it, which also reads better.
+
+`SERIES_KEY_MATCHES` exists because adding `RULED_ACCEPT` nearly broke two unrelated places
+that ask "did this match a series key?" — one names a new folder after the matched series
+rather than the parsed guess, the other counts matches for the summary. Each held its own
+literal list. Missing either is silent: the run completes and quietly names folders wrongly.
+One constant now, with a test asserting its membership.
+
+**The answer is keyed on the folder, not the file.** A per-file rule expires the moment the
+next issue is released with a different filename. Trusting the whole shelf is a bigger
+commitment and was chosen deliberately over a narrower per-pair rule, which would have had
+to be re-answered for every new spin-off.
+
+Rules live in `.comic_matching_rules.md` in the library root — same place, format and
+identity rules as `.comic_containers.md`, for the same reason (it describes a library, and
+the root is rebasable). They **override** the container classification in both directions:
+that file is a standing guess about a folder, this one is a decision made while looking at
+the books. `Refuse` still admits the folder's own series, or saying "not this one" would
+orphan the folder entirely.
+
+**Failure modes, chosen not inherited.** A missing rules file changes nothing. A mistyped
+section heading is treated as `Refuse`, matching the containers file's stance — wrongly
+refusing costs a folder you file by hand, wrongly accepting costs a misfiled book you may
+never notice. The folder name arrives in a POST body and becomes a **line** in a file whose
+every line is meaningful, so it is rejected if it contains a control character (either
+newline would let it write its own `## ` heading or `- ` bullets) or a slash.
+
+Writing is a rewrite, not an append: reversing an earlier answer must *replace* it, or the
+folder is listed twice with opposite meanings and which one wins is an accident of dict
+ordering. The prose under each heading survives, because the file is meant to be read.
+
+Eleven mutations of the writer, all killed — including "an earlier ruling is left in place",
+"a mistyped decision is not validated", "control characters pass through", and "a missing
+section is silently skipped", which would have produced a button that appears to work and
+does nothing.
+
+**Asymmetry found and left alone.** The subfolder path (`find_folder_match()`) matches
+folder-to-folder on the normalised name only — no shortened candidates, so O16 never applies
+to it and neither does O6 publisher routing. Not a defect for the files in hand; recorded
+because it means the two intake paths do not match by the same rules.
+
+#### O21 — a file must be planned once ✅ fixed, found by a live run
+
+Found by accident: a real `--execute` run created an **empty** `/The Nameless Kingdom/`
+beside a populated `/The Nameless Kingdom -/`, and reported the only 3 failures of 131
+moves as "Source not found".
+
+The CSV is a move plan and `plan_moves()` walks it row by row, trusting that no two rows
+name the same file. STEP 1 emits one row per source subfolder and records what it handled
+in `processed_files`; STEP 2 emits one row per remaining file and skips anything already
+in that set. STEP 1 stored **bare filenames**; STEP 2 looks files up by **path relative to
+the source directory**. The two forms are identical for a loose file, so the check appeared
+to work everywhere except the single case it was written for — every file inside a subfolder
+was planned twice, to two different destinations. Whichever move ran first won; the other
+failed, leaving an empty folder under the losing name.
+
+**The trap in fixing it.** The duplicate was load-bearing. `scan_source_subfolders()` listed
+files with `rglob`, so a *nested* file entered the plan as a bare name, and the folder op
+flattens by joining that name onto the subfolder — a path that does not exist. Nested files
+were therefore never moved by the folder row at all; they arrived only via the duplicate
+standalone row. De-duplicating by suppressing that row would have converted a double-move
+into no move: silent data loss, and a strictly worse bug than the one being fixed.
+
+So the fix is two coordinated changes, not one. `rglob` → `glob`, because the folder row can
+only honestly promise its direct children; and the `processed_files` key gains the folder
+prefix, so both steps identify a file the same way. Nested files now fall through to STEP 2
+and are moved individually, which is the path that already worked.
+
+`tests/test_no_duplicate_plans.py` drives the generator end to end against temp directories
+and asserts the invariant directly — every source file appears in exactly one row, and every
+row names a file that exists. Three mutations, all killed: restoring the bare-name key
+reproduces the exact Nameless Kingdom duplication, restoring `rglob` makes the plan name a
+path that is not there, and the nested-file test is what stops the naive fix.
+
+**Same confusion, third site.** The block that fills `Left Folder` for a file-level row searched
+`subfolders` for the file by bare name, so it never matched either — every such row shipped with
+an empty `Left Folder`. It now reads the parent from the path. This also covers a case the search
+could not: a folder with no extractable series name is never scanned as a subfolder at all, so its
+files reach STEP 2 with a parent that a `subfolders` lookup would deny they have.
+
+**Known edge, not fixed.** STEP 2 cannot see the folders STEP 1 is about to create, so a nested
+file is routed against the library as it exists now and lands at the root rather than beside the
+siblings its folder op is creating a home for. Pre-existing and not a regression — before O21 that
+same row was what moved the file, and it went to the same place; only the duplicate failed move is
+gone. Left alone because no nested source folder has yet appeared in a real run.
+
+**Second defect, same folder.** `extract_folder_series_name()` removes the volume keyword and
+then a trailing issue number, which takes both ends of a range and leaves the dash that joined
+them: `X-Men Vol 1 - 5` → `X-Men -`. That is what named `/The Nameless Kingdom -/`, and it is
+general to every `Vol. N - M` folder. Stripping a dangling trailing separator is anchored to
+the end of the string, so `Spider-Man` and `A-Force` are untouched — both are pinned.
 
 #### O17 — rebasable root ✅ implemented, and it was a live defect
 
@@ -1460,6 +1614,93 @@ regression that would have broken your existing CSV.
 
 This enforces `REQUIREMENTS:174` *"single source/destination pair per session"* mechanically
 instead of trusting it.
+
+---
+
+### 10.8 `library_duplicates.py` — the same rule turned on the library itself
+
+The Organiser warns when an incoming download already exists in the destination. Asked for
+the same question across the whole library, the answer is `library_duplicates.py`: group all
+29,516 comic files by what `parse_release()` makes of them, and report every key holding
+more than one file. It writes `LIBRARY_DUPLICATES.md` and **moves and deletes nothing**.
+
+The interesting part is not the grouping — it is that the grouping is far too generous to
+act on. `parse_release()` discards information, so two files land on one key precisely when
+the thing that told them apart is the thing it dropped. The first run listed 1,690 groups as
+likely duplicates; spot-checking found six *different* Harley Quinn volume 2s in one of them,
+because subtitles are discarded outright.
+
+So a group is presented as a likely duplicate only if it survives three checks, each reading
+back something the parser threw away:
+
+| check | the case it was written for |
+|---|---|
+| filename signature, packaging stripped | `Harley Quinn v02 - Keepsake` vs `- Power Outage` |
+| variant / cover-only tag | 1 MB `New Avengers 001 (Cover ONLY)` vs the 42 MB issue |
+| volume claimed by the parent folders | `Terra Obscura Volume 1/#003` vs `Volume 2/#003` |
+
+Each check earned two refinements from real data rather than from reasoning:
+
+- The signature strips format words and leading zeros, but `v01` is a *single token* — so
+  the two steps never met and `Omnibus v01` stayed unequal to `Vol 1`. 31 genuine duplicate
+  groups were sitting in the review pile because of it.
+- A folder naming a *range* — `Shakara (v01-v02)` — holds both books and so identifies
+  neither; read naively it split real duplicates. Only a folder naming exactly one volume
+  speaks for the file inside it.
+- An **absent** volume folder is silence, not a claim of "no volume". One copy of
+  `The Authority v1 #10` is filed under a `v1 (1999)` folder and one is not; comparing the
+  empty set against `{1}` demoted a real duplicate. Disagreement now requires evidence on
+  both sides.
+
+Measured on the live library, a 14-group random sample of the likely list went from 8/12
+correct to 13/14 — inside the one-in-six false-positive rate you accepted. The residue is
+the case the report names in its own prose: a heading with no `v` and no `#` means the
+parser found a series name and nothing else, so `Strange Adventures (2000)` and
+`Strange Adventures (DC 2022)` share a group. The years in the filenames are the giveaway.
+
+**Sizes are shown, never used to decide** — your reasoning, and it holds: two rips by
+different packers are never the same length, so size cannot prove two files *differ*. The
+converse is sound though, and free, so a group whose copies are byte-identical in length
+says `— identical size` in its heading. That is one file filed in two folders rather than a
+judgement call, and it covers 1,048 of the 1,398 likely groups.
+
+The asymmetry throughout is deliberate: a true duplicate wrongly demoted to *check these by
+hand* costs a minute of reading, a false duplicate left in the likely pile costs a book.
+10 tests; four mutations, each killed by exactly one test — removing the `v01` split, the
+variant check, the range-folder guard, and the empty-set discard.
+
+### 10.9 O23 — the same rule in the pipeline, as a question rather than a report
+
+The report above is read once, later. The live pipeline has to ask *before* a file moves, and
+about one folder rather than the whole library — your scope, "only dest.folder". Both halves
+share `duplicates.py`; nothing is re-implemented.
+
+The chain is four hops and every one of them was a place to get it wrong:
+
+| hop | what it does | the trap |
+|---|---|---|
+| generator | indexes the destination folder, writes `Existing Copies` and `Existing Copy Sizes` | a blank folder name resolves to the library root, which would flag everything |
+| UI | names the existing file and both sizes; two opt-in buttons | telling you a copy exists without naming it is the version you rejected |
+| server | writes the decisions to a temp JSON, passes `--duplicate-decisions` | — |
+| mover | skips, files anyway, or **refuses to execute** | `--no-confirm` means a warning is printed to nobody |
+
+**The key had to match on both sides.** The mover plans a file row's move from `Left Panel
+File`, which can carry a source subfolder; the CSV column names the file bare. Keyed on the
+bare name the skip silently never fires *and* the gate keeps asking about a file no answer
+can settle. A folder row is the opposite case — it moves many files and only some collided,
+so those are named one by one, under their subfolder.
+
+**Doing nothing is safe, and doing nothing is not an answer.** Neither button is preselected.
+An undecided flag does not stop a dry run — you cannot decide about what you cannot see — but
+`--execute` exits non-zero and moves nothing. Deselecting a row cannot express this: an empty
+selection means *all* rows, so the decision needed its own channel.
+
+On the live batch: 116 rows, 3 collisions found (`Blood Type v01`, `Free Planet v02`,
+`Sleeper Book 01`), 0 same-key pairs rejected by the demotion checks — so the extra rules cost
+nothing here while still holding back the Harley Quinn and `Book Two` classes. 16 tests; six
+mutations, all killed — the bare-name key, `keep` not counting as an answer, skip/keep
+swapped, warning instead of refusing, the demotion checks dropped, and the blank-folder guard
+removed.
 
 ---
 

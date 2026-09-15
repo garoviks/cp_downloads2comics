@@ -140,10 +140,12 @@ class TestPackagingWordsStillStrip(unittest.TestCase):
         # i.e. exactly the old behaviour, but now for a stated reason.
         dest = {'Wytches': {'folders': ['Wytches 001-006 (2014)'],
                             'loose_files': [], 'files_in_folders': []}}
-        matched, _data, how = gen.find_matches(
+        matched, _data, how, _blocked = gen.find_matches(
             'Wytches - Bad Egg Halloween Special (2015).cbz',
             'Wytches - Bad Egg Halloween', dest)
-        self.assertEqual((matched, how), ('Wytches', 'EXACT'))
+        # EXACT_SHORTENED, not EXACT: the destination was reached through the
+        # fallback candidate, which is the one worth a second look in the UI.
+        self.assertEqual((matched, how), ('Wytches', 'EXACT_SHORTENED'))
 
     def test_arc_folder_beats_the_parent_when_it_exists(self):
         dest = {
@@ -151,7 +153,7 @@ class TestPackagingWordsStillStrip(unittest.TestCase):
             'Die - Loaded': {'folders': ['Die - Loaded'], 'loose_files': [],
                              'files_in_folders': []},
         }
-        matched, _data, how = gen.find_matches(
+        matched, _data, how, _blocked = gen.find_matches(
             'Die - Loaded v01 - Zero Sessions (2026).cbz', 'Die - Loaded', dest)
         self.assertEqual((matched, how), ('Die - Loaded', 'EXACT'))
 
@@ -166,6 +168,32 @@ class TestPackagingWordsStillStrip(unittest.TestCase):
         # require one.
         self.assertEqual(gen.extract_folder_series_name('Omnibus'), '')
         self.assertEqual(gen.extract_folder_series_name('Saga TPB'), 'Saga')
+
+
+class TestVolumeRangeLeavesNoDanglingSeparator(unittest.TestCase):
+    """A folder name is a folder name: 'X-Men Vol 1 - 5' must not become 'X-Men -'.
+
+    Removing the volume keyword and the trailing issue number takes both ends of
+    a range and leaves the dash that joined them. This shipped: a real run created
+    /mnt/extramedia/Comics/'The Nameless Kingdom -'/ as a sibling of the correct
+    folder, so the same series existed twice under names differing by a hyphen.
+    """
+
+    def test_range_folder_keeps_only_the_title(self):
+        self.assertEqual(
+            gen.extract_folder_series_name('The Nameless Kingdom Vol. 1 - 3 (2026) (digital)'),
+            'The Nameless Kingdom')
+        self.assertEqual(gen.extract_folder_series_name('X-Men Vol 1 - 5'), 'X-Men')
+
+    def test_a_hyphen_inside_the_title_survives(self):
+        # The strip is anchored to the end, so an internal hyphen is not a
+        # candidate. Without the anchor these lose their tail.
+        self.assertEqual(gen.extract_folder_series_name('Spider-Man'), 'Spider-Man')
+        self.assertEqual(gen.extract_folder_series_name('A-Force Vol. 2 - 4'), 'A-Force')
+
+    def test_a_title_ending_in_a_word_is_untouched(self):
+        self.assertEqual(gen.extract_folder_series_name('Sha 01-03'), 'Sha')
+        self.assertEqual(gen.extract_folder_series_name('Hellboy Vol. 1 (2020)'), 'Hellboy')
 
 
 class TestProposeFilename(unittest.TestCase):

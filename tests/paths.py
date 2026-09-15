@@ -46,6 +46,14 @@ def load_release():
     return release
 
 
+def load_duplicates():
+    """Import duplicates — the shared 'are these the same book' rules."""
+    if GENERATOR_DIR not in sys.path:
+        sys.path.insert(0, GENERATOR_DIR)
+    import duplicates
+    return duplicates
+
+
 def load_creator():
     """Import comic_volume_creator_server, or return None if it is not present.
 

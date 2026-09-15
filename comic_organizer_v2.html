@@ -257,6 +257,45 @@
   .pill-yes { background: #2d6a4f55; color: #d8f3dc; border: 1px solid #2d6a4f; }
   .pill-no  { background: #3d171744; color: #f4a4a4; border: 1px solid #e9456044; }
 
+  /* Rows the matcher is least sure about. A left edge rather than a full row
+     tint: these are a minority of rows and the tint would fight the existing
+     action pills for attention. */
+  tr.review-shortened { border-left: 3px solid #d99a2b; }
+  tr.review-blocked   { border-left: 3px solid #e94560; }
+  .review-note {
+    font-size: 0.70rem;
+    margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
+  }
+  .review-shortened .review-note { color: #d99a2b; }
+  .review-blocked   .review-note { color: #f4a4a4; }
+  .review-note .shelf { font-family: monospace; }
+  /* A decided row is deliberately quiet: no border, no count, and no colour
+     competing with the rows still asking a question. */
+  .review-note.decided { color: #7d9a7d; }
+  .rule-btns { display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+  .rule-btn { white-space: nowrap; }
+  .rule-btn-active {
+    background: #2d6a4f; color: #d8f3dc; border: 1px solid #74c69d88;
+  }
+
+  /* The point of this note is the name of the copy you already have, so unlike
+     .review-note it wraps rather than ellipsising away the half that matters. */
+  .dup-note {
+    font-size: 0.70rem;
+    margin-top: 4px;
+    max-width: 280px;
+    white-space: normal;
+    word-break: break-word;
+    color: #d99a2b;
+  }
+  .dup-note .have { font-family: monospace; }
+  .dup-note .size { color: #b0b0c0; }
+  .dup-note.decided { color: #7d9a7d; }
+
   .strategy-text {
     color: #b0b0c0;
     font-size: 0.75rem;
@@ -570,6 +609,10 @@
     <div class="stat">
       <span class="stat-num" id="stat-selected">0</span>
       <span class="stat-label">Selected</span>
+    </div>
+    <div class="stat" title="Rows the matcher was unsure about — marked in the tables below">
+      <span class="stat-num" id="stat-review">0</span>
+      <span class="stat-label">Need Review</span>
     </div>
   </div>
 
@@ -1185,10 +1228,14 @@ async function dryRun() {
 
   try {
     const selectedIds = getSelectedIds();
+    const duplicateDecisions = buildDuplicateDecisions();
+    const skipping = Object.values(duplicateDecisions).filter(d => d === 'skip').length;
+    if (skipping) addLog(`⏭️  Leaving ${skipping} file(s) in the source folder — already in the library`);
     const response = await fetch('/api/dry-run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ overrides, selected_ids: selectedIds,
+                             duplicate_decisions: duplicateDecisions,
                              src_dir: currentFolders().srcDir,
                              dest_dir: currentFolders().destDir }),
     });
@@ -1231,10 +1278,14 @@ async function consolidate() {
 
   try {
     const selectedIds = getSelectedIds();
+    const duplicateDecisions = buildDuplicateDecisions();
+    const skipping = Object.values(duplicateDecisions).filter(d => d === 'skip').length;
+    if (skipping) addLog(`⏭️  Leaving ${skipping} file(s) in the source folder — already in the library`);
     const response = await fetch('/api/consolidate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ overrides, selected_ids: selectedIds,
+                             duplicate_decisions: duplicateDecisions,
                              src_dir: currentFolders().srcDir,
                              dest_dir: currentFolders().destDir }),
     });
@@ -1309,7 +1360,7 @@ function renderFolders(rows) {
       <td><div class="file-name" title="${row['Left Folder'] || ''}">${row['Left Folder'] || row.leftFile}/</div></td>
       <td>${row['File Count'] || '?'} files${rightNote}</td>
       <td>${row.series}</td>
-      <td><div class="folder-name">${effectiveFolder(row)}/</div></td>
+      <td><div class="folder-name">${effectiveFolder(row)}/</div>${duplicateNoteHtml(row)}${duplicateButtonsHtml(row)}</td>
       <td>${actionLabel}</td>
       <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
       <td><div class="actions-cell">
@@ -1365,6 +1416,258 @@ function effectiveFolder(row) {
   return row.destOverride !== null ? row.destOverride : row.folder;
 }
 
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// 'Suggested Folder Name' is displayed as a path fragment ('/Saga (2012)/').
+// A rule names the folder, so the decoration has to come off first — the server
+// refuses anything containing a slash.
+function folderNameOnly(s) {
+  return String(s || '').replace(/^\/+|\/+$/g, '').trim();
+}
+
+// The one folder a rule about this row would name. A row kept out of a shelf
+// names the shelf it was kept out of; a row that landed on one names that. Both
+// are a folder, which is what a rule is keyed on — never the filename, because
+// next month's issue has a different one and the same destination.
+function ruleFolder(row) {
+  const c = row['Confidence'];
+  const wasBlocked = (c === 'BLOCKED_CONTAINER' || c === 'RULED_REFUSE');
+  return folderNameOnly(wasBlocked ? row['Blocked Destination']
+                                   : effectiveFolder(row));
+}
+
+// The decision in force for this row, or null while the question is still open.
+//
+// row.ruleSaved is set the instant a save succeeds, before any rescan. That is
+// deliberate: the rule cannot change how this row MATCHED until the matcher runs
+// again, but the question has been answered, and a row that keeps asking after
+// you have answered it — while offering the opposite choice, because saving
+// moves it to the other confidence — was the original complaint.
+function savedDecision(row) {
+  if (row.ruleSaved) return row.ruleSaved;
+  const c = row['Confidence'];
+  if (c === 'RULED_ACCEPT') return 'accept';
+  if (c === 'RULED_REFUSE') return 'refuse';
+  return null;
+}
+
+// Which rows deserve a second look, and why. EXACT_SHORTENED and
+// BLOCKED_CONTAINER are the only two confidences that came from the matcher
+// hesitating; everything else it is as sure about as it can be.
+//
+// Once a row is edited by hand the note is stale — the shelf named in it is no
+// longer where the file is going — so an override clears it. A saved decision
+// clears it too: the matcher only hesitated because nobody had decided yet.
+function reviewState(row) {
+  if (row.destOverride !== null || row.seriesOverride !== undefined) return null;
+  if (savedDecision(row)) return null;
+  const c = row['Confidence'];
+  if (c === 'BLOCKED_CONTAINER') {
+    const shelf = row['Blocked Destination'];
+    return {
+      cls: 'review-blocked',
+      note: shelf
+        ? `⛔ not filed into <span class="shelf">${esc(shelf)}</span> — that shelf holds many series`
+        : '⛔ a matching shelf was refused',
+      plain: shelf
+        ? `Not filed into ${shelf} — that shelf holds many series`
+        : 'A matching shelf was refused',
+    };
+  }
+  if (c === 'EXACT_SHORTENED') {
+    return {
+      cls: 'review-shortened',
+      note: `⚠️ matched on a shortened title — check this is not a spin-off`,
+      plain: 'Matched on a shortened title — check this is not a spin-off',
+    };
+  }
+  return null;
+}
+
+// The note is one ellipsised line, so the half that explains WHY is the half
+// that gets cut. The title carries it in full; without it the note reads as an
+// alarm with no reason attached.
+function reviewNoteHtml(review) {
+  return review
+    ? `<div class="review-note" title="${esc(review.plain)}">${review.note}</div>`
+    : '';
+}
+
+// What a settled row says in place of a warning. Muted and uncounted — it is a
+// record of an answer, not a question. While a save is waiting on a rescan it
+// says so, because the destination cell beside it still shows the old answer.
+function decidedNoteHtml(row) {
+  const decision = savedDecision(row);
+  if (!decision) return '';
+  const folder = ruleFolder(row);
+  const what = decision === 'accept'
+    ? `shortened titles are filed into ${folder}`
+    : `shortened titles are kept out of ${folder}`;
+  const pending = row.ruleSaved ? ' — rescan to apply' : '';
+  return `<div class="review-note decided" title="${esc('Saved rule: ' + what)}"
+    >✓ ${esc(what + pending)}</div>`;
+}
+
+// Both answers, always, in the same order and the same place.
+//
+// Offering only the answer the matcher happened to want meant the same folder
+// showed opposite buttons depending on which way it had last been decided: after
+// accepting 'Grimm Fairy Tales' the row flipped to EXACT_SHORTENED and invited
+// you to 'Never shorten into Grimm Fairy Tales' — to undo what you had just
+// done, with nothing on screen saying it had been done.
+//
+// The labels stay short and the folder is named in the tooltip, because the cell
+// directly above already names it.
+const RULE_CHOICES = [
+  { decision: 'accept', label: 'Always shelf here',
+    hint: f => `Always file shortened titles into ${f}` },
+  { decision: 'refuse', label: 'Never shorten here',
+    hint: f => `Never file shortened titles into ${f}` },
+];
+
+// Rendered under the note rather than in the actions cell. The actions cell is
+// the last column of a ~3800px table, so a button there is off-screen on any
+// normal display — and this is the one control a flagged row exists for.
+function ruleButtonsHtml(row) {
+  const folder = ruleFolder(row);
+  if (!folder) return '';
+  const active = savedDecision(row);
+  if (!active && !reviewState(row)) return '';
+  const buttons = RULE_CHOICES.map(c => `<button
+      class="btn btn-sm rule-btn ${c.decision === active ? 'rule-btn-active' : 'btn-outline'}"
+      data-rule-id="${row.id}" onclick="saveRule(${row.id}, '${c.decision}')"
+      title="${esc(c.hint(folder))}">${esc(c.label)}</button>`).join('');
+  return `<div class="rule-btns">${buttons}</div>`;
+}
+
+async function saveRule(rowId, decision) {
+  const row = data.find(r => r.id === rowId);
+  if (!row) return;
+  const folder = ruleFolder(row);
+  if (!folder) return;
+
+  const btns = document.querySelectorAll(`[data-rule-id="${rowId}"]`);
+  btns.forEach(b => { b.disabled = true; });
+  try {
+    const res = await fetch('/api/save-rule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        folder: folder,
+        decision: decision,
+        dest_dir: currentFolders().destDir,
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text() || res.status);
+    const out = await res.json();
+    // Settle the row here and now. Only a rescan can change how it MATCHED — so
+    // the destination cell is left alone and the note admits it is pending — but
+    // the question itself is answered, and it should stop being asked.
+    row.ruleSaved = decision;
+    renderAll();
+    toast(`💾 Saved — ${out.saved}. Rescan to apply.`);
+  } catch (e) {
+    btns.forEach(b => { b.disabled = false; });
+    toast(`❌ Could not save rule: ${e.message}`);
+  }
+}
+
+// ─── Books the destination folder already holds ──────────────────────────────
+//
+// The generator writes two parallel ' | '-joined columns: 'incoming => existing'
+// and 'incoming size => existing size'. Zipped back into one object per
+// collision, because the sizes are the only thing on screen that tells two rips
+// of the same book from two different books — and they are never equal, so they
+// are shown to be judged, never used to decide.
+function existingCopies(row) {
+  const names = String(row['Existing Copies'] || '').split('|')
+    .map(s => s.trim()).filter(Boolean);
+  const sizes = String(row['Existing Copy Sizes'] || '').split('|').map(s => s.trim());
+  return names.map((entry, i) => {
+    const halves = entry.split('=>').map(s => s.trim());
+    const bytes = String(sizes[i] || '').split('=>').map(s => s.trim());
+    return {
+      incoming: halves[0] || '',
+      existing: halves[1] || '',
+      inSize: bytes[0] || '?',
+      exSize: bytes[1] || '?',
+    };
+  });
+}
+
+// Naming the existing file is the whole job. Told only that a copy exists you
+// would have to go and find it in the library yourself, which is the version of
+// this that was rejected.
+function duplicateNoteHtml(row) {
+  const copies = existingCopies(row);
+  if (!copies.length) return '';
+  const decided = row.dupDecision
+    ? (row.dupDecision === 'skip'
+        ? '✓ staying in the source folder'
+        : '✓ filing it anyway, as a second copy')
+    : '📀 already in the library:';
+  // A folder row moves many files and only some of them collided, so it has to
+  // say which. A file row is the file already named two cells to the left.
+  const many = row.action === 'CONSOLIDATE_FOLDER' || row.action === 'CREATE_FOLDER_FROM_FOLDER';
+  const lines = copies.map(c => `<div title="${esc(c.incoming + ' → ' + c.existing)}"
+      >${many ? esc(c.incoming) + ' → ' : ''}<span class="have">${esc(c.existing)}</span>
+       <span class="size">(there ${esc(c.exSize)} · yours ${esc(c.inSize)})</span></div>`).join('');
+  return `<div class="dup-note${row.dupDecision ? ' decided' : ''}">${decided}${lines}</div>`;
+}
+
+// Undecided is the safe state: the mover refuses to execute while anything here
+// is unanswered, so neither button is preselected and clicking the active one
+// again puts the question back.
+const DUP_CHOICES = [
+  { decision: 'skip', label: 'Skip — already have it',
+    hint: 'Leave this file in the source folder' },
+  { decision: 'keep', label: 'File it anyway',
+    hint: 'Move it in as a second copy' },
+];
+
+function duplicateButtonsHtml(row) {
+  if (!existingCopies(row).length) return '';
+  const active = row.dupDecision;
+  const buttons = DUP_CHOICES.map(c => `<button
+      class="btn btn-sm rule-btn ${c.decision === active ? 'rule-btn-active' : 'btn-outline'}"
+      onclick="setDuplicateDecision(${row.id}, '${c.decision}')"
+      title="${esc(c.hint)}">${esc(c.label)}</button>`).join('');
+  return `<div class="rule-btns">${buttons}</div>`;
+}
+
+function setDuplicateDecision(rowId, decision) {
+  const row = data.find(r => r.id === rowId);
+  if (!row) return;
+  row.dupDecision = row.dupDecision === decision ? undefined : decision;
+  renderAll();
+}
+
+// The same source-relative keys comic_mover.py's flagged_duplicates() builds, so
+// a decision made here lands on the move it was made about. A folder row moves
+// many files and only some of them collided, so those are named one by one; a
+// file row is the one file it names, subfolder and all.
+function duplicateKeys(row) {
+  const copies = existingCopies(row);
+  if (!copies.length) return [];
+  if (row.action !== 'CONSOLIDATE_FOLDER' && row.action !== 'CREATE_FOLDER_FROM_FOLDER') {
+    return row.leftFile ? [row.leftFile] : [];
+  }
+  const folder = folderNameOnly(row['Left Folder']);
+  return copies.map(c => folder ? `${folder}/${c.incoming}` : c.incoming).filter(Boolean);
+}
+
+function buildDuplicateDecisions() {
+  const out = {};
+  data.forEach(row => {
+    if (!row.dupDecision) return;
+    duplicateKeys(row).forEach(k => { out[k] = row.dupDecision; });
+  });
+  return out;
+}
+
 function renderConsolidate(rows) {
   const tbody = document.getElementById('body-consolidate');
   tbody.innerHTML = '';
@@ -1378,13 +1681,15 @@ function renderConsolidate(rows) {
     const renameNote = row.proposedFilename
       ? `<div class="rename-note" title="Will be renamed to: ${row.proposedFilename}">→ ${row.proposedFilename}</div>`
       : '';
+    const review = reviewState(row);
     const tr = document.createElement('tr');
     tr.id = 'row-' + row.id;
+    if (review) tr.classList.add(review.cls);
     tr.innerHTML = `
       <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
       <td><div class="file-name" title="${row.leftFile}">${basename(row.leftFile)}</div>${renameNote}</td>
       <td>${row.series}</td>
-      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
+      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div>${reviewNoteHtml(review)}${decidedNoteHtml(row)}${ruleButtonsHtml(row)}${duplicateNoteHtml(row)}${duplicateButtonsHtml(row)}</td>
       <td class="match-count">${row.matches}</td>
       <td>${hasFolderPill}</td>
       <td>${hasFilesPill}</td>
@@ -1405,13 +1710,15 @@ function renderNewfolder(rows) {
     const renameNote = row.proposedFilename
       ? `<div class="rename-note" title="Will be renamed to: ${row.proposedFilename}">→ ${row.proposedFilename}</div>`
       : '';
+    const review = reviewState(row);
     const tr = document.createElement('tr');
     tr.id = 'row-' + row.id;
+    if (review) tr.classList.add(review.cls);
     tr.innerHTML = `
       <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
       <td><div class="file-name" title="${row.leftFile}">${basename(row.leftFile)}</div>${renameNote}</td>
       <td>${row.series}</td>
-      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div></td>
+      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div>${reviewNoteHtml(review)}${decidedNoteHtml(row)}${ruleButtonsHtml(row)}${duplicateNoteHtml(row)}${duplicateButtonsHtml(row)}</td>
       <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
       <td><div class="actions-cell">
         <button class="btn btn-sm btn-outline" onclick="openDetails(${row.id})">Details</button>
@@ -1437,6 +1744,13 @@ function renderAll() {
   document.getElementById('stat-consolidate').textContent = consolidateRows.length;
   document.getElementById('stat-newfolder').textContent = newfolderRows.length;
   document.getElementById('stat-files').textContent = data.length;
+
+  // Counted over the whole data set, not the rendered rows: a search filter
+  // hiding a flagged row must not make the count read zero.
+  const review = document.getElementById('stat-review');
+  const needing = data.filter(r => reviewState(r)).length;
+  review.textContent = needing;
+  review.style.color = needing ? '#d99a2b' : '';
 
   updateSelected();
 }

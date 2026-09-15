@@ -57,6 +57,7 @@ class ContainerFixture(unittest.TestCase):
     """
 
     md = CONTAINERS_MD
+    rules_md = None
 
     def setUp(self):
         self.original = g.DEST_DIR
@@ -64,14 +65,19 @@ class ContainerFixture(unittest.TestCase):
         if self.md is not None:
             with open(os.path.join(self.tmp, g.CONTAINERS_FILE), 'w') as f:
                 f.write(self.md)
+        if self.rules_md is not None:
+            with open(os.path.join(self.tmp, g.MATCHING_RULES_FILE), 'w') as f:
+                f.write(self.rules_md)
         g.DEST_DIR = __import__('pathlib').Path(self.tmp)
         g._CONTAINERS_CACHE.pop(self.tmp, None)
+        g._RULES_CACHE.pop(self.tmp, None)
         self._saved_shape = dict(g.FOLDER_SERIES)
         g.FOLDER_SERIES.clear()
 
     def tearDown(self):
         g.DEST_DIR = self.original
         g._CONTAINERS_CACHE.pop(self.tmp, None)
+        g._RULES_CACHE.pop(self.tmp, None)
         g.FOLDER_SERIES.clear()
         g.FOLDER_SERIES.update(self._saved_shape)
         import shutil
@@ -232,16 +238,19 @@ class TestTheGateInsideTheMatcher(ContainerFixture):
     def test_a_shortened_title_no_longer_reaches_the_shelf(self):
         dest = self._dest('Star Trek')
         fn = 'Star Trek - Deviations - Evermore (2026) (digital).cbr'
-        folder, _, conf = g.find_matches(fn, 'Star Trek - Deviations - Evermore', dest)
+        folder, _, conf, blocked = g.find_matches(
+            fn, 'Star Trek - Deviations - Evermore', dest)
         self.assertIsNone(folder)
-        self.assertEqual(conf, 'NONE')
+        self.assertEqual(conf, 'BLOCKED_CONTAINER')
+        self.assertEqual(blocked, 'Star Trek')
 
     def test_the_shelfs_own_series_still_reaches_it(self):
         dest = self._dest('Star Trek')
-        folder, _, conf = g.find_matches(
+        folder, _, conf, blocked = g.find_matches(
             'Star Trek 025 (2024) (Digital).cbz', 'Star Trek', dest)
         self.assertEqual(folder, 'Star Trek')
         self.assertEqual(conf, 'EXACT')
+        self.assertIsNone(blocked)
 
     def test_a_refused_candidate_does_not_end_the_search(self):
         """Falling through matters: a more specific folder may still be there.
@@ -250,7 +259,7 @@ class TestTheGateInsideTheMatcher(ContainerFixture):
         a real 'Star Trek - Deviations' folder would not help.
         """
         dest = self._dest('Star Trek', 'Star Trek - Deviations')
-        folder, _, _ = g.find_matches(
+        folder, _, _, _ = g.find_matches(
             'Star Trek - Deviations 001 (2026) (digital).cbr',
             'Star Trek - Deviations', dest)
         self.assertEqual(folder, 'Star Trek - Deviations')
@@ -258,7 +267,7 @@ class TestTheGateInsideTheMatcher(ContainerFixture):
     def test_an_ordinary_folder_still_takes_a_shortened_title(self):
         """The gate must not become a blanket ban on the fallback candidate."""
         dest = self._dest('The Wicked + The Divine')
-        folder, _, _ = g.find_matches(
+        folder, _, _, _ = g.find_matches(
             'The Wicked + The Divine - Christmas Annual (2017) (Digital).cbr',
             'The Wicked + The Divine - Christmas', dest)
         self.assertEqual(folder, 'The Wicked + The Divine')
@@ -279,6 +288,168 @@ class TestTheGateInsideTheMatcher(ContainerFixture):
         data = {'folders': [], 'files_in_folders': [],
                 'loose_files': ['Star Trek - Something.cbz']}
         self.assertTrue(g._match_is_allowed(data, is_primary=False))
+
+
+class TestASavedRuleOverridesTheClassification(ContainerFixture):
+    """`.comic_matching_rules.md` — the answers you already gave.
+
+    The gate can only ever be a default. `Star Trek - Deviations` really does
+    belong on the `Star Trek` shelf and `Supernatural - Wayward Special` really
+    does not belong on `Supernatural (2025)`, and no rule derivable from the
+    filenames tells those apart. So the UI asks, once, and the answer is kept
+    here — keyed on the FOLDER, because next month's issue will have a different
+    filename but the same destination.
+    """
+
+    rules_md = ("## Accept (1)\n- Star Trek\n\n"
+                "## Refuse (1)\n- Supernatural (2025)\n")
+
+    def test_accept_reopens_a_container_shelf(self):
+        self.assertTrue(g.container_allows('Star Trek', is_primary=False))
+
+    def test_refuse_closes_an_ordinary_folder(self):
+        """'Supernatural (2025)' holds one series, so nothing else would stop it."""
+        self.assertIsNone(g.container_kind('Supernatural (2025)'))
+        self.assertFalse(g.container_allows('Supernatural (2025)', is_primary=False))
+
+    def test_refuse_still_admits_the_folders_own_series(self):
+        """Otherwise saying 'not this one' would orphan the whole folder."""
+        self.assertTrue(g.container_allows('Supernatural (2025)', is_primary=True))
+
+    def test_an_unruled_folder_is_unaffected(self):
+        self.assertFalse(g.container_allows('Mark Millar', is_primary=True))
+        self.assertTrue(g.container_allows('Lumberjanes', is_primary=False))
+
+    def test_the_rule_reaches_find_matches(self):
+        dest = {g.extract_series_name(f): {'folders': [f], 'files_in_folders': [],
+                                           'loose_files': []}
+                for f in ('Star Trek',)}
+        folder, _, conf, _ = g.find_matches(
+            'Star Trek - Deviations - Evermore (2026) (digital).cbr',
+            'Star Trek - Deviations - Evermore', dest)
+        self.assertEqual(folder, 'Star Trek')
+        # Not EXACT_SHORTENED: the shelf took it because the user said so, and a
+        # settled question must not be reported as an open one.
+        self.assertEqual(conf, 'RULED_ACCEPT')
+
+    def test_a_refusal_by_rule_is_told_apart_from_one_by_classification(self):
+        """Both create a new folder; only one is a decision already made.
+
+        'Supernatural (2025)' is an ordinary single-series folder — the
+        container gate would wave this through. The refusal can only have come
+        from the rules file, and the row must say so or it will ask again.
+        """
+        dest = {g.extract_series_name(f): {'folders': [f], 'files_in_folders': [],
+                                           'loose_files': []}
+                for f in ('Supernatural (2025)',)}
+        folder, _, conf, blocked = g.find_matches(
+            'Supernatural - Wayward Special 001 (2026) (digital).cbr',
+            'Supernatural - Wayward Special', dest)
+        self.assertIsNone(folder)
+        self.assertEqual(conf, 'RULED_REFUSE')
+        # Still named, or the UI cannot offer to reverse the decision.
+        self.assertEqual(blocked, 'Supernatural (2025)')
+
+    def test_an_accepted_rule_still_counts_as_matching_a_series(self):
+        """The new confidence must not fall out of the lists that mean 'matched'.
+
+        Two places ask 'did this match a series key?' — one names the new folder
+        after the matched series rather than the parsed guess, the other counts
+        matches for the summary. RULED_ACCEPT is an EXACT_SHORTENED match that
+        someone authorised, so both must say yes. Adding a confidence and missing
+        these is silent: the run completes and quietly names folders wrongly.
+        """
+        self.assertIn('RULED_ACCEPT', g.SERIES_KEY_MATCHES)
+        self.assertIn('EXACT_SHORTENED', g.SERIES_KEY_MATCHES)
+        self.assertIn('EXACT', g.SERIES_KEY_MATCHES)
+        # A refusal matched nothing, so it must NOT be in there.
+        self.assertNotIn('RULED_REFUSE', g.SERIES_KEY_MATCHES)
+        self.assertNotIn('BLOCKED_CONTAINER', g.SERIES_KEY_MATCHES)
+        # PUBLISHER is excluded deliberately — it would name the folder after
+        # the publisher instead of the series.
+        self.assertNotIn('PUBLISHER', g.SERIES_KEY_MATCHES)
+
+
+class TestTheRulesFileIsOptionalAndForgiving(ContainerFixture):
+    rules_md = None
+
+    def test_no_rules_file_changes_nothing(self):
+        self.assertEqual(g.load_matching_rules(), {})
+        self.assertFalse(g.container_allows('Star Trek', is_primary=False))
+
+
+class TestAMistypedRuleFailsClosed(ContainerFixture):
+    """A section that is neither 'Accept' nor 'Refuse' must not grant permission.
+
+    Same stance as a mistyped container heading: the cost of wrongly refusing is
+    a folder you file by hand, the cost of wrongly accepting is a misfiled book
+    you may not notice.
+    """
+    rules_md = "## Acept (1)\n- Lumberjanes\n"
+
+    def test_an_unrecognised_section_does_not_accept(self):
+        self.assertFalse(g.container_allows('Lumberjanes', is_primary=False))
+        self.assertTrue(g.container_allows('Lumberjanes', is_primary=True))
+
+
+class TestRulesAreKeyedLikeEveryOtherFolderList(ContainerFixture):
+    """Same identity rules as the containers file, because it is the same parser."""
+    rules_md = "## Accept (1)\n-  rick and morty   \n"
+
+    def test_case_and_surrounding_space_do_not_matter(self):
+        self.assertTrue(g.container_allows('Rick and Morty ', is_primary=False))
+
+
+class TestTheReportSaysHowItMatched(ContainerFixture):
+    """Provenance, so the UI can ask rather than guess.
+
+    Every destination in the report is created either way; what differs is
+    whether you would want to reverse it. A match found through a SHORTENED
+    candidate might be a spin-off filed under its parent, and a shelf the gate
+    REFUSED is a decision worth offering back with one click. Collapsing both
+    into 'EXACT' and 'NONE' throws away exactly the rows a human should see.
+    """
+
+    def _dest(self, *folders):
+        return {g.extract_series_name(f): {'folders': [f], 'files_in_folders': [],
+                                           'loose_files': []}
+                for f in folders}
+
+    def test_a_fallback_match_is_marked_apart_from_a_direct_one(self):
+        dest = self._dest('The Wicked + The Divine')
+        _, _, conf, _ = g.find_matches(
+            'The Wicked + The Divine - Christmas Annual (2017) (Digital).cbr',
+            'The Wicked + The Divine - Christmas', dest)
+        self.assertEqual(conf, 'EXACT_SHORTENED')
+
+    def test_finding_nothing_is_not_the_same_as_being_refused(self):
+        """Both create a new folder; only one of them had somewhere to go."""
+        _, _, conf, blocked = g.find_matches(
+            'Lumberjanes 001 (2015) (digital).cbr', 'Lumberjanes', {})
+        self.assertEqual(conf, 'NONE')
+        self.assertIsNone(blocked)
+
+    def test_the_refused_shelf_is_named_as_it_sits_on_disk(self):
+        """The UI has to offer the real folder back, not the parsed key.
+
+        'Rick and Morty ' ends in a space in the library. Reporting the key
+        would hand the UI a path that does not exist.
+        """
+        dest = self._dest('Rick and Morty ')
+        _, _, conf, blocked = g.find_matches(
+            'Rick and Morty - Corporate Assets 001 (2021).cbr',
+            'Rick and Morty - Corporate Assets', dest)
+        self.assertEqual(conf, 'BLOCKED_CONTAINER')
+        self.assertEqual(blocked, 'Rick and Morty ')
+
+    def test_a_publisher_shelf_reached_by_a_short_name_is_still_flagged(self):
+        """O6 allows it, but it is still a fallback match and still worth a look."""
+        dest = self._dest('Humanoids (Europe)')
+        folder, _, conf, blocked = g.find_matches(
+            'Humanoids - The Incal 001 (2020).cbr', 'Humanoids - The Incal', dest)
+        self.assertEqual(folder, 'Humanoids')
+        self.assertEqual(conf, 'EXACT_SHORTENED')
+        self.assertIsNone(blocked)
 
 
 if __name__ == '__main__':

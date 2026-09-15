@@ -19,6 +19,7 @@ from pathlib import Path
 from collections import defaultdict, Counter
 from typing import Dict, List, Tuple, Optional
 
+import duplicates
 import release
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -93,10 +94,15 @@ UNCLASSIFIED_CONTAINER_SERIES = 20
 # -> set of distinct series found anywhere beneath it. Feeds the fail-safe above.
 FOLDER_SERIES: Dict[str, set] = {}
 
-# Cache for load_containers(), keyed by the root it was read from — DEST_DIR is
-# rebasable at runtime (O17), so a plain cache would serve library A's list to
-# library B.
+# Decisions made in the UI about shortened-title matching, written back so the
+# same judgement is not asked for twice. Lives beside the containers file and in
+# the same format, for the same reason: it describes a library, not this script.
+MATCHING_RULES_FILE = ".comic_matching_rules.md"
+
+# Caches keyed by the root they were read from — DEST_DIR is rebasable at
+# runtime (O17), so a plain cache would serve library A's lists to library B.
 _CONTAINERS_CACHE: Dict[str, Dict[str, str]] = {}
+_RULES_CACHE: Dict[str, Dict[str, str]] = {}
 
 # ═══════════════════════════════════════════════════════════════════════════
 # FILENAME PARSING
@@ -248,6 +254,12 @@ def extract_folder_series_name(folder_name: str) -> str:
     # Clean up spaces
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
+    # A range like "Vol. 1 - 3" loses both numbers above and leaves the dash
+    # that joined them, so "X-Men Vol 1 - 5" would name a folder "X-Men -".
+    # Only a dangling separator is stripped; the hyphen inside "X-Men" is not
+    # trailing and so is untouched.
+    cleaned = re.sub(r'[\s\-–—,&]+$', '', cleaned).strip()
+
     return cleaned
 
 
@@ -333,8 +345,12 @@ def scan_source_subfolders() -> Dict[str, Dict]:
 
         folder_name = item.name
 
-        # Find comic files in this folder
-        comic_files = [f.name for f in item.rglob('*')
+        # Direct children only. The folder op flattens by joining the bare name
+        # onto the subfolder, so a nested file would resolve to a path that does
+        # not exist; listing it here would promise a move that cannot happen.
+        # Nested files fall through to STEP 2, which carries the full relative
+        # path and moves them one by one.
+        comic_files = [f.name for f in item.glob('*')
                        if f.is_file() and f.suffix.lower() in {'.cbz', '.cbr'}]
 
         if not comic_files:
@@ -628,38 +644,65 @@ def find_exact_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dic
 # looser.
 
 
-def load_containers() -> Dict[str, str]:
-    """Read `.comic_containers.md` from the library root.
+def _read_folder_list(path: Path) -> Dict[str, str]:
+    """Read a hand-edited '## Section' / '- folder name' file.
 
-    Returns {stripped-lowercase folder name: kind}. Kind is the '## Heading'
-    lowercased, so adding a section to the file is enough to add a kind.
+    Returns {stripped-lowercase folder name: lowercased section heading}, so
+    adding a section to one of these files is enough to add a category.
 
     Folder identity is keyed STRIPPED, matching `.comic_exclusions.md`: two real
     folders end in a space ('2000AD - Collections ', 'Rick and Morty '), and a
     list that only matched the untrimmed form would silently miss them.
 
-    A missing file is not an error — it means no folder is classified, and every
-    folder then behaves as it did before O16.
+    A missing file yields {} rather than raising. Both callers treat an absent
+    file as 'nothing is listed', which is the behaviour that existed before
+    either file did.
+    """
+    listed: Dict[str, str] = {}
+    if not path.exists():
+        return listed
+    current = None
+    for line in path.read_text(encoding='utf-8').splitlines():
+        line = line.rstrip()
+        if line.startswith('## '):
+            # '## Publisher (10)' -> 'publisher'
+            current = line[3:].split('(')[0].strip().lower()
+        elif line.startswith('- ') and current:
+            name = line[2:].strip().lower()
+            if name:
+                listed[name] = current
+    return listed
+
+
+def load_containers() -> Dict[str, str]:
+    """Read `.comic_containers.md` from the library root.
+
+    Returns {folder name: kind}, where kind is the section it was listed under.
+    A missing file means no folder is classified, and every folder then behaves
+    as it did before O16.
     """
     root = str(DEST_DIR)
-    if root in _CONTAINERS_CACHE:
-        return _CONTAINERS_CACHE[root]
+    if root not in _CONTAINERS_CACHE:
+        _CONTAINERS_CACHE[root] = _read_folder_list(DEST_DIR / CONTAINERS_FILE)
+    return _CONTAINERS_CACHE[root]
 
-    kinds: Dict[str, str] = {}
-    path = DEST_DIR / CONTAINERS_FILE
-    if path.exists():
-        current = None
-        for line in path.read_text(encoding='utf-8').splitlines():
-            line = line.rstrip()
-            if line.startswith('## '):
-                # '## Publisher (10)' -> 'publisher'
-                current = line[3:].split('(')[0].strip().lower()
-            elif line.startswith('- ') and current:
-                name = line[2:].strip().lower()
-                if name:
-                    kinds[name] = current
-    _CONTAINERS_CACHE[root] = kinds
-    return kinds
+
+def load_matching_rules() -> Dict[str, str]:
+    """Read `.comic_matching_rules.md` from the library root.
+
+    Returns {folder name: 'accept' | 'refuse'} — decisions you made in the UI
+    about shortened-title matching, saved so the same download never has to be
+    judged twice.
+
+    A rule names a FOLDER, not a file: saying yes to 'Star Trek - Deviations'
+    going onto the `Star Trek` shelf trusts that shelf with shortened titles
+    from then on. Per-file rules were the alternative and would not have helped,
+    because next month's release has a different filename.
+    """
+    root = str(DEST_DIR)
+    if root not in _RULES_CACHE:
+        _RULES_CACHE[root] = _read_folder_list(DEST_DIR / MATCHING_RULES_FILE)
+    return _RULES_CACHE[root]
 
 
 def container_kind(folder_name: str) -> Optional[str]:
@@ -686,9 +729,25 @@ def container_allows(folder_name: str, is_primary: bool) -> bool:
     'Star Trek - Deviations - Evermore' also answers to 'Star Trek', and it is
     the second, shortened candidate that reaches a shelf it does not belong on.
 
-    Anything not recognised as a container is allowed, so the default is the
-    behaviour that existed before O16.
+    A saved rule wins over the classification, in both directions. The rules
+    file is a record of decisions a person made while looking at the actual
+    files; the containers file is a standing guess about a folder. When they
+    disagree the person is right, and the guess is what they were correcting.
+
+    Anything neither ruled on nor recognised as a container is allowed, so the
+    default is the behaviour that existed before O16.
     """
+    rule = load_matching_rules().get(folder_name.strip().lower())
+    if rule is not None:
+        if rule == 'accept':
+            return True
+        # 'refuse', and any heading that is neither word. A typo'd section must
+        # not quietly become permission — same fail-closed stance as the kinds
+        # below. Note this still admits the folder's OWN series: the rule is
+        # about shortened titles, so refusing every candidate would make the
+        # folder unreachable rather than merely careful.
+        return is_primary
+
     kind = container_kind(folder_name)
     if kind is None or kind == 'publisher':
         return True
@@ -713,6 +772,28 @@ def _match_is_allowed(dest_data: Dict, is_primary: bool) -> bool:
     return any(container_allows(f, is_primary) for f in folders)
 
 
+def _saved_decision(dest_data: Dict) -> Optional[str]:
+    """The saved rule covering this match, if the user has already ruled on it.
+
+    Only the reporting needs this. The gate itself is already rule-aware through
+    container_allows(); what the gate cannot say afterwards is WHO decided, and a
+    row the user has settled must stop asking to be settled.
+
+    Reads the first folder carrying a rule, matching the 'any folder may admit
+    it' reading in _match_is_allowed() — a key naming several folders is decided
+    by whichever of them has an opinion.
+    """
+    rules = load_matching_rules()
+    for folder in dest_data.get('folders') or []:
+        decision = rules.get(folder.strip().lower())
+        if decision is not None:
+            # container_allows() treats any heading that is not 'accept' as a
+            # refusal, so this must read the same way or the CSV would label a
+            # typo'd section as accepted while the gate refused it.
+            return 'accept' if decision == 'accept' else 'refuse'
+    return None
+
+
 def _match_candidates(src_filename: str, src_series: str) -> List[str]:
     """Series names to try against the destination index, most specific first.
 
@@ -729,7 +810,16 @@ def _match_candidates(src_filename: str, src_series: str) -> List[str]:
     return ordered
 
 
-def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Optional[str], Optional[Dict], str]:
+# Confidences that mean "matched on a series key", as opposed to a publisher
+# folder or no match at all. RULED_ACCEPT belongs here: it IS an EXACT_SHORTENED
+# match and differs only in who authorised it, so any code asking "did this match
+# a series?" must answer yes. One name because more than one place asks, and two
+# literal lists is how they drift apart.
+SERIES_KEY_MATCHES = ("EXACT", "EXACT_SHORTENED", "RULED_ACCEPT")
+
+
+def find_matches(src_filename: str, src_series: str,
+                 dest_map: Dict) -> Tuple[Optional[str], Optional[Dict], str, Optional[str]]:
     """
     Find matches using priority rules:
     1. Specific series folders (Billy & Buddy, Gomer Goof, etc.)
@@ -737,14 +827,43 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
     3. Series name exact match (case-insensitive) — folder or loose files
     4. No match (None)
 
-    Returns: (matched_folder, match_data, confidence)
-             where confidence is one of:
-             - 'SPECIFIC_SERIES', 'PUBLISHER', 'EXACT', 'NONE'
+    Returns: (matched_folder, match_data, confidence, blocked_folder)
+
+    `confidence` distinguishes HOW the match was reached, because two of these
+    want a human eye and the rest do not:
+
+      SPECIFIC_SERIES   a hardcoded folder rule fired
+      PUBLISHER         requirement O6 routing
+      EXACT             matched on the file's OWN series — the safe case
+      EXACT_SHORTENED   matched on a shortened form of the title. Usually right
+                        ('The Wicked + The Divine - Christmas Annual' belongs
+                        with 'The Wicked + The Divine') and sometimes a spin-off
+                        landing on its parent, which no filename rule can tell
+                        apart. Flagged for review rather than guessed at.
+      BLOCKED_CONTAINER a container refused a shortened title (O16). No match
+                        was made; `blocked_folder` names the shelf it would have
+                        gone to, so the UI can offer it back.
+      RULED_ACCEPT      as EXACT_SHORTENED, but a saved rule says this shelf
+                        takes shortened titles.
+      RULED_REFUSE      as BLOCKED_CONTAINER, but a saved rule is what refused
+                        it, not the container classification.
+      NONE              nothing matched
+
+    The RULED_ pair exist so the UI can tell an open question from a settled
+    one. The classification in .comic_containers.md is a standing guess and is
+    worth a second look; a rule in .comic_matching_rules.md is an answer the
+    user already gave, and re-flagging it would ask them the same question every
+    scan — while offering them the opposite choice, since the row has by then
+    moved to the other confidence.
+
+    `blocked_folder` is None unless confidence is BLOCKED_CONTAINER or
+    RULED_REFUSE. It still names the shelf when a rule did the refusing, so the
+    UI can offer to reverse the decision.
     """
     # Rule 1: Check for specific series folders
     specific = find_specific_series_match(src_filename, dest_map)
     if specific:
-        return (specific[0], specific[1], specific[2])
+        return (specific[0], specific[1], specific[2], None)
 
     # Rule 2: Try exact series match (before publisher — a series folder beats a
     # publisher folder). Every candidate the parser produced is tried, MOST
@@ -761,10 +880,25 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
     # shares its opening words. A refused candidate falls through to the next
     # one rather than ending the search — 'Star Trek - Deviations' should still
     # get the chance to match a real 'Star Trek - Deviations' folder.
+    #
+    # A refusal is remembered but not acted on yet: a later rule may still match,
+    # and only if nothing does is the refusal worth reporting.
+    blocked = None
+    blocked_by_rule = False
     for index, candidate in enumerate(_match_candidates(src_filename, src_series)):
         exact = find_exact_match(candidate, dest_map)
-        if exact and _match_is_allowed(exact[1], is_primary=(index == 0)):
-            return (exact[0], exact[1], "EXACT")
+        if not exact:
+            continue
+        is_primary = (index == 0)
+        if _match_is_allowed(exact[1], is_primary):
+            if is_primary:
+                return (exact[0], exact[1], "EXACT", None)
+            ruled = _saved_decision(exact[1])
+            return (exact[0], exact[1],
+                    "RULED_ACCEPT" if ruled == 'accept' else "EXACT_SHORTENED", None)
+        if blocked is None:
+            blocked = (exact[1].get('folders') or [exact[0]])[0]
+            blocked_by_rule = _saved_decision(exact[1]) == 'refuse'
 
     # Rule 2b: Before-dash fallback — try main series name without arc subtitle.
     #
@@ -780,7 +914,9 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
             exact_main = find_exact_match(main_series, dest_map)
             # Never primary by construction: this IS the shortened form.
             if exact_main and _match_is_allowed(exact_main[1], is_primary=False):
-                return (exact_main[0], exact_main[1], "EXACT")
+                ruled = _saved_decision(exact_main[1])
+                return (exact_main[0], exact_main[1],
+                        "RULED_ACCEPT" if ruled == 'accept' else "EXACT_SHORTENED", None)
 
     # REMOVED: Rule 2c, the trailing 3-4 digit fallback ("2000AD prog 2485" ->
     # "2000AD prog"). It is now unreachable, not merely unused.
@@ -797,10 +933,15 @@ def find_matches(src_filename: str, src_series: str, dest_map: Dict) -> Tuple[Op
     # Rule 3: Check for publisher folders
     publisher = find_publisher_match(src_filename, dest_map)
     if publisher:
-        return (publisher[0], publisher[1], publisher[2])
+        return (publisher[0], publisher[1], publisher[2], None)
 
-    # Rule 4: No match
-    return (None, None, "NONE")
+    # Rule 4: No match — but say so precisely. A file that found nothing and a
+    # file that found a shelf and was refused both create a new folder, and only
+    # the second one is a decision you might want to reverse.
+    if blocked:
+        return (None, None,
+                "RULED_REFUSE" if blocked_by_rule else "BLOCKED_CONTAINER", blocked)
+    return (None, None, "NONE", None)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -936,7 +1077,12 @@ def generate_consolidation_strategy(
         # created '/Cruel Kingdom 2/' and moved a file called 'Cruel Kingdom v01'
         # into it. EXACT only — a PUBLISHER match would name the folder after the
         # publisher.
-        new_folder_name = matched_series if (confidence == "EXACT" and matched_series) else src_series
+        # EXACT_SHORTENED counts here too: it is still a series-key match, just
+        # one reached through a shortened candidate — exactly the 'Cruel Kingdom'
+        # case above. Only PUBLISHER must be excluded.
+        new_folder_name = (matched_series
+                           if (confidence in SERIES_KEY_MATCHES and matched_series)
+                           else src_series)
         move_source = f"LEFT + RIGHT_FILES({num_loose_files})"
         consolidation_strategy = f"Create /{new_folder_name}/ folder and move left file + {num_loose_files} loose right file(s) into it"
         action_type = "CREATE_FOLDER_WITH_FILES"
@@ -983,8 +1129,134 @@ def generate_consolidation_strategy(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# ALREADY IN THE LIBRARY
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Only the folder a file is actually headed for is searched, not the whole
+# library. A copy sitting somewhere else is a question about the library, which
+# library_duplicates.py answers; a copy in the destination folder is a question
+# about this move.
+_DEST_FOLDER_INDEX: Dict[str, Dict[tuple, List[Path]]] = {}
+
+
+def index_destination_folder(folder: Path) -> Dict[tuple, List[Path]]:
+    """Comic files under one library folder, grouped by the key a duplicate shares.
+
+    Cached: a folder op asks about the same folder once per file it carries, and
+    the answer cannot change during a run.
+    """
+    cache_key = str(folder)
+    if cache_key not in _DEST_FOLDER_INDEX:
+        index = defaultdict(list)
+        if folder.is_dir():
+            for p in folder.rglob('*'):
+                if p.is_file() and p.suffix.lower() in duplicates.COMIC_EXTS:
+                    series = normalize_name(release.parse_release(p.name).series)
+                    index[duplicates.book_key(p.name, series)].append(p)
+        _DEST_FOLDER_INDEX[cache_key] = dict(index)
+    return _DEST_FOLDER_INDEX[cache_key]
+
+
+def find_existing_copies(src_rel: str, dest_folder: Path) -> List[Path]:
+    """Files in dest_folder that look like the book `src_rel` already is.
+
+    `src_rel` is relative to SRC_DIR, because the folders above a download can
+    carry a volume number its filename leaves out just as the library's do, and
+    duplicates.looks_like_one_book() compares the two.
+    """
+    name = Path(src_rel).name
+    key = duplicates.book_key(name, normalize_name(release.parse_release(name).series))
+    library_root = dest_folder.parent
+    return [c for c in index_destination_folder(dest_folder).get(key, [])
+            if duplicates.looks_like_one_book([src_rel, c.relative_to(library_root)])]
+
+
+def describe_existing_copies(src_rels, dest_folder_name: str) -> Tuple[str, str]:
+    """The two CSV columns, as parallel ' | '-joined lists.
+
+    One entry per collision rather than one per incoming file, so a folder op
+    carrying thirty files and a single loose file produce the same shape and the
+    UI needs one reader for both. Empty strings when nothing collides, which is
+    the overwhelming majority of rows.
+    """
+    folder = dest_folder_name.strip('/').strip()
+    if not folder:
+        return '', ''
+    dest_folder = DEST_DIR / folder
+    names, sizes = [], []
+    for src_rel in src_rels:
+        src = SRC_DIR / src_rel
+        for copy in find_existing_copies(src_rel, dest_folder):
+            names.append(f'{Path(src_rel).name} => {copy.relative_to(DEST_DIR)}')
+            sizes.append(f'{human_size(src)} => {human_size(copy)}')
+    return ' | '.join(names), ' | '.join(sizes)
+
+
+def human_size(path: Path) -> str:
+    """Sizes are shown so you can judge two rips, never used to decide anything.
+
+    Two packers never produce the same byte count for one book, so a difference
+    proves nothing — but seen next to each other, 412 MB against 9 MB says which
+    is the full scan.
+    """
+    try:
+        n = path.stat().st_size
+    except OSError:
+        return '?'
+    return f'{n / 1e9:.2f} GB' if n >= 1e9 else f'{n / 1e6:.0f} MB'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════
+
+# One list, because main() writes the CSV from two places — the normal path and
+# the "nothing to do" path — and a reader that gets different headers depending
+# on whether the source was empty has to special-case an empty run.
+CSV_COLUMNS = [
+    "Left Folder",
+    "File Count",
+    "Left Panel File",
+    "Series Name",
+    "Action Type",
+    "Suggested Folder Name",
+    "Right Panel Matches (Count)",
+    "Has Existing Folder",
+    "Has Existing Files",
+    "Consolidation Strategy",
+    "Move Source",
+    "Files Details",
+    "Right Loose Files",
+    "Proposed Filename",
+    "Proposed Files Details",
+    # Which library this analysis describes. Every destination in this file is
+    # a BARE NAME — 'Saga (2012)', not a path — so a row only means anything
+    # paired with the root it was scanned against. Recording it lets the mover
+    # refuse a CSV built for a different library (REQUIREMENTS:174, one
+    # source/destination pair per session).
+    #
+    # A column rather than a sidecar file on purpose: the stamp has to travel
+    # with the CSV. A separate file can be left behind by a copy or a move,
+    # which is the same class of separation the stamp exists to detect.
+    "Scanned Destination",
+    # HOW the match was reached, not just what it was. Two values ask for a
+    # human eye — EXACT_SHORTENED matched on a shortened title, and
+    # BLOCKED_CONTAINER found a shelf and was refused — and the UI cannot
+    # highlight what it is not told. This column used to be computed and then
+    # discarded as "internal use only", which is why every row looked equally
+    # certain.
+    "Confidence",
+    # Names the shelf BLOCKED_CONTAINER refused, so the UI can offer it back.
+    "Blocked Destination",
+    # Books the destination folder already holds. Two parallel ' | '-joined
+    # lists, one entry per collision: 'incoming.cbz => Saga (2012)/existing.cbz'
+    # and '412 MB => 388 MB'. Naming the existing file is the point — a warning
+    # that a copy exists somewhere, without saying where, leaves you opening
+    # folders by hand to find out what you already have.
+    "Existing Copies",
+    "Existing Copy Sizes",
+]
+
 
 def main():
     global SRC_DIR, DEST_DIR, OUTPUT_FILE
@@ -1015,17 +1287,10 @@ def main():
 
     if not src_map and not subfolders:
         print("✅ No files found in source directory — writing empty CSV.")
-        csv_columns = [
-            "Left Folder", "File Count", "Left Panel File", "Series Name",
-            "Action Type", "Suggested Folder Name", "Right Panel Matches (Count)",
-            "Has Existing Folder", "Has Existing Files", "Consolidation Strategy",
-            "Move Source", "Files Details", "Right Loose Files", "Proposed Filename",
-            "Proposed Files Details", "Scanned Destination",
-        ]
         output_dir = OUTPUT_FILE.parent
         output_dir.mkdir(parents=True, exist_ok=True)
         with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
-            csv.DictWriter(f, fieldnames=csv_columns).writeheader()
+            csv.DictWriter(f, fieldnames=CSV_COLUMNS).writeheader()
         print(f"✅ CSV written to: {OUTPUT_FILE}")
         return
 
@@ -1127,11 +1392,20 @@ def main():
             "Right Loose Files": " | ".join(right_loose_for_row),
             "Proposed Files Details": " | ".join(proposed_files_details_parts),
         }
+        # Only an existing folder can already hold a copy; the other branch is
+        # creating the folder, so there is nothing in it yet.
+        if matched_folder:
+            row["Existing Copies"], row["Existing Copy Sizes"] = describe_existing_copies(
+                [str(Path(folder_name) / f) for f in files_in_folder], dest_folder)
         rows.append(row)
 
-        # Mark these files as processed
+        # Mark these files as processed. STEP 2 identifies a file by its path
+        # relative to the source directory, so the key must be stored in that
+        # form — a bare name would never match, and every file inside a
+        # subfolder would be planned twice: once by the folder op above and
+        # again as a standalone file.
         for f in files_in_folder:
-            processed_files.add(f)
+            processed_files.add(str(Path(folder_name) / f))
 
     # STEP 2: Process remaining files (loose files + files in folders without matches)
     print("\n📄 Processing individual files (loose + unmatched folders)...")
@@ -1147,12 +1421,15 @@ def main():
             remaining_count = len([f for f in src_files if f != src_filename and f not in processed_files])
 
             # Find matches (pass filename for rule 1 & 2 checks)
-            matched_series, match_data, confidence = find_matches(src_filename, src_series, dest_map)
+            matched_series, match_data, confidence, blocked_folder = find_matches(
+                src_filename, src_series, dest_map)
 
             # Generate strategy
             row = generate_consolidation_strategy(
                 src_filename, src_series, matched_series, match_data, confidence, remaining_count
             )
+            # The shelf O16 refused, so the UI can offer it back with one click.
+            row["Blocked Destination"] = blocked_folder or ""
 
             # Compute proposed filename (rename to match canonical series in target folder)
             proposed_filename = ""
@@ -1171,6 +1448,12 @@ def main():
             loose = dest_map.get(matched_series, {}).get("loose_files", []) if matched_series else []
             row["Right Loose Files"] = " | ".join(loose)
 
+            # CONSOLIDATE is the only file-level action that targets a folder
+            # already on disk. The others create one, so nothing can be in it.
+            if row.get("Action Type") == "CONSOLIDATE":
+                row["Existing Copies"], row["Existing Copy Sizes"] = describe_existing_copies(
+                    [src_filename], row.get("Suggested Folder Name", ""))
+
             # Track statistics
             action_type = row["Action Type"]
             if action_type == "CONSOLIDATE":
@@ -1180,17 +1463,16 @@ def main():
             elif action_type == "COPY_TO_BASE":
                 copy_to_base_count += 1
 
-            if confidence in ["EXACT", "SPECIFIC_SERIES", "PUBLISHER"]:
+            if confidence in SERIES_KEY_MATCHES + ("SPECIFIC_SERIES", "PUBLISHER"):
                 exact_matches += 1
 
-            # Add folder info if file is in a subfolder
-            file_parent = None
-            for folder_name, folder_data in subfolders.items():
-                if src_filename in folder_data["files"]:
-                    file_parent = folder_name
-                    break
-
-            if file_parent:
+            # Add folder info if file is in a subfolder. Read from the path
+            # itself rather than by searching `subfolders`: a file only reaches
+            # STEP 2 when no folder op claimed it, which includes folders that
+            # were never scanned as such (no extractable series name), so a
+            # lookup there answers "no parent" for files that plainly have one.
+            file_parent = str(Path(src_filename).parent)
+            if file_parent != '.':
                 row["Left Folder"] = file_parent
 
             rows.append(row)
@@ -1205,40 +1487,11 @@ def main():
     output_dir = OUTPUT_FILE.parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    csv_columns = [
-        "Left Folder",
-        "File Count",
-        "Left Panel File",
-        "Series Name",
-        "Action Type",
-        "Suggested Folder Name",
-        "Right Panel Matches (Count)",
-        "Has Existing Folder",
-        "Has Existing Files",
-        "Consolidation Strategy",
-        "Move Source",
-        "Files Details",
-        "Right Loose Files",
-        "Proposed Filename",
-        "Proposed Files Details",
-        # Which library this analysis describes. Every destination in this file is
-        # a BARE NAME — 'Saga (2012)', not a path — so a row only means anything
-        # paired with the root it was scanned against. Recording it lets the mover
-        # refuse a CSV built for a different library (REQUIREMENTS:174, one
-        # source/destination pair per session).
-        #
-        # A column rather than a sidecar file on purpose: the stamp has to travel
-        # with the CSV. A separate file can be left behind by a copy or a move,
-        # which is the same class of separation the stamp exists to detect.
-        "Scanned Destination",
-    ]
-
     with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=csv_columns, restval="")
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, restval="")
         writer.writeheader()
         for row in rows:
-            # Keep only CSV columns, ignore 'Confidence' (internal use only)
-            output_row = {col: row.get(col, "") for col in csv_columns}
+            output_row = {col: row.get(col, "") for col in CSV_COLUMNS}
             output_row["Scanned Destination"] = str(DEST_DIR)
             writer.writerow(output_row)
 

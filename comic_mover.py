@@ -29,6 +29,12 @@ CSV_FILE = SRC_DIR / "matching_analysis_consolidated.csv"  # Load CSV from left 
 LOG_DIR = Path("/home/nesha/scripts/cp_downloads2comics/.logs")
 ROLLBACK_FILE = LOG_DIR / "last_execution.json"
 
+# What you decided about each download the destination folder already holds:
+# source-relative path → 'skip' or 'keep'. Populated from --duplicate-decisions.
+# A file the generator flagged and that appears here under neither value is
+# undecided, and an execute carrying one is refused — see require_duplicate_decisions().
+DUPLICATE_DECISIONS: Dict[str, str] = {}
+
 # ═══════════════════════════════════════════════════════════════════════════
 # CLASSES
 # ═══════════════════════════════════════════════════════════════════════════
@@ -210,6 +216,49 @@ def find_right_panel_folder(dest_folder_name: str) -> Optional[Path]:
         return dest_path
     return None
 
+def flagged_duplicates(row: Dict) -> List[str]:
+    """Source-relative paths in this row the destination folder already holds.
+
+    Reads the generator's 'Existing Copies' column, whose entries are
+    '<incoming filename> => <existing path>'.
+
+    A folder row carries many files, so which of them collided is only knowable
+    from the incoming half of each entry, prefixed with the subfolder to match
+    the form plan_moves() moves them under. A file row carries exactly one file
+    and already names it in full — and that name can include a subfolder, which
+    the bare name in the column would lose.
+    """
+    entries = [e.strip() for e in row.get('Existing Copies', '').split('|') if e.strip()]
+    if not entries:
+        return []
+    if row.get('Action Type', '').strip() not in (
+            "CONSOLIDATE_FOLDER", "CREATE_FOLDER_FROM_FOLDER"):
+        left_file = row.get('Left Panel File', '').strip()
+        return [left_file] if left_file else []
+
+    left_folder = row.get('Left Folder', '').strip()
+    out = []
+    for entry in entries:
+        name = entry.split('=>')[0].strip()
+        if name:
+            out.append(str(Path(left_folder) / name) if left_folder else name)
+    return out
+
+
+def undecided_duplicates(rows: List[Dict]) -> List[str]:
+    """Flagged files you have neither skipped nor confirmed, each named once.
+
+    One incoming file can collide with several copies already in the folder, but
+    that is still one thing to decide about it.
+    """
+    seen = {}
+    for row in rows:
+        for f in flagged_duplicates(row):
+            if DUPLICATE_DECISIONS.get(f) not in ('skip', 'keep'):
+                seen[f] = True
+    return list(seen)
+
+
 def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
     """
     Create move plan for all rows.
@@ -271,6 +320,9 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
             # Add a move for each left file (flattened — use proposed name if available)
             for filename in filenames:
                 src_file = src_subfolder / filename
+                if DUPLICATE_DECISIONS.get(str(Path(left_folder) / filename)) == 'skip':
+                    print(f"   ⏭️  Already in {dest_folder}, left where it is: {filename}")
+                    continue
                 dst_name = rename_map.get(filename, filename)
                 if not is_plain_name(dst_name):
                     print(f"   ⚠️  Rejected proposed filename with a path component: {dst_name!r}")
@@ -299,6 +351,14 @@ def plan_moves(rows: List[Dict]) -> List[MoveOperation]:
             continue
 
         op = MoveOperation(row, series, dest_folder)
+
+        # Your answer to 'this is already in the folder'. Recorded as a skipped
+        # operation rather than dropped, so the dry run still accounts for the
+        # file and says why it is staying put.
+        if DUPLICATE_DECISIONS.get(left_file) == 'skip':
+            op.skipped_reason = f"Already in {dest_folder}, left where it is"
+            operations.append(op)
+            continue
 
         # Check if source file exists
         src_file = SRC_DIR / left_file
@@ -418,6 +478,16 @@ def execute_moves(operations: List[MoveOperation], dry_run: bool = False) -> boo
                     else:
                         if not move.src.exists():
                             raise FileNotFoundError(f"Source not found: {move.src}")
+                        # shutil.move() overwrites an existing destination
+                        # without a word, so a plan that sends two different
+                        # files to one path destroys one of them and reports
+                        # success for both. Refuse and let the error surface —
+                        # rollback() has always held this line (see below), and
+                        # the forward direction is where the file is still the
+                        # only copy.
+                        if move.dst.exists():
+                            raise FileExistsError(
+                                f"Destination already occupied, refusing to overwrite: {move.dst}")
                         shutil.move(str(move.src), str(move.dst))
                         print(f"   ✅ Moved: {move.src.name} → {move.dst.parent.name}/")
                         move.executed = True
@@ -552,6 +622,9 @@ Examples:
                         help="Path to JSON file with user overrides [{left_file, series_name, dest_folder}]")
     parser.add_argument("--selected-ids", type=str, default=None,
                         help="Comma-separated 0-based row indices to process (omit for all rows)")
+    parser.add_argument("--duplicate-decisions", type=str, default=None,
+                        help="Path to JSON {source-relative path: 'skip'|'keep'} for files "
+                             "the destination folder already holds")
     parser.add_argument("--src", type=str, default=None,
                         help=f"Source directory, and where the CSV is read from (default: {SRC_DIR})")
     parser.add_argument("--dest", type=str, default=None,
@@ -617,6 +690,16 @@ Examples:
         except Exception as e:
             print(f"⚠️  Could not load overrides: {e}\n")
 
+    if args.duplicate_decisions:
+        try:
+            with open(args.duplicate_decisions, 'r') as f:
+                DUPLICATE_DECISIONS.update(json.load(f))
+        except Exception as e:
+            # Left empty on purpose: an unreadable decisions file means nothing
+            # is decided, and the gate below then refuses the execute. Guessing
+            # would file a duplicate you may have meant to skip.
+            print(f"⚠️  Could not load duplicate decisions: {e}\n")
+
     # Filter rows by selected indices if provided
     if args.selected_ids:
         try:
@@ -627,6 +710,21 @@ Examples:
         except Exception as e:
             print(f"⚠️  Invalid --selected-ids: {e}\n")
             sys.exit(1)
+
+    # A flagged file with no answer must not be executed on. --no-confirm exists
+    # so the UI can run unattended, which also means nobody is watching a warning
+    # go by; refusing is the only thing that actually stops a second copy landing
+    # in the folder. A dry run reports and continues — that is where you go to
+    # see what you have to decide about.
+    pending = undecided_duplicates(rows)
+    if pending:
+        print(f"\n⚠️  {len(pending)} file(s) already in the destination folder, undecided:")
+        for f in pending:
+            print(f"   • {f}")
+        if args.execute:
+            print("\n❌ Refusing to execute. Choose skip or file-anyway for each, then retry.\n")
+            sys.exit(1)
+        print("   (dry run — deciding is only required to execute)\n")
 
     print("📐 Planning moves...")
     operations = plan_moves(rows)
