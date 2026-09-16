@@ -281,6 +281,8 @@
   .rule-btn-active {
     background: #2d6a4f; color: #d8f3dc; border: 1px solid #74c69d88;
   }
+  /* Same width ticked or not, so a row of buttons does not shift when clicked. */
+  .tickbox { font-family: monospace; opacity: 0.85; }
 
   /* The point of this note is the name of the copy you already have, so unlike
      .review-note it wraps rather than ellipsising away the half that matters. */
@@ -294,6 +296,8 @@
   }
   .dup-note .have { font-family: monospace; }
   .dup-note .size { color: #b0b0c0; }
+  /* 0 pages means the archive was read and holds no images — not a comic. */
+  .dup-note .not-a-comic { color: #f4a4a4; font-weight: 600; }
   .dup-note.decided { color: #7d9a7d; }
 
   .strategy-text {
@@ -1528,6 +1532,15 @@ const RULE_CHOICES = [
     hint: f => `Never file shortened titles into ${f}` },
 ];
 
+// A box, ticked or empty, in front of every answer button.
+//
+// The colour change alone was too quiet to read as 'you clicked this' — and an
+// empty box beside a ticked one says what a coloured button on its own cannot:
+// that there was a choice, and which way it went.
+function tick(on) {
+  return `<span class="tickbox">${on ? '\u2611' : '\u2610'}</span> `;
+}
+
 // Rendered under the note rather than in the actions cell. The actions cell is
 // the last column of a ~3800px table, so a button there is off-screen on any
 // normal display — and this is the one control a flagged row exists for.
@@ -1539,7 +1552,7 @@ function ruleButtonsHtml(row) {
   const buttons = RULE_CHOICES.map(c => `<button
       class="btn btn-sm rule-btn ${c.decision === active ? 'rule-btn-active' : 'btn-outline'}"
       data-rule-id="${row.id}" onclick="saveRule(${row.id}, '${c.decision}')"
-      title="${esc(c.hint(folder))}">${esc(c.label)}</button>`).join('');
+      title="${esc(c.hint(folder))}">${tick(c.decision === active)}${esc(c.label)}</button>`).join('');
   return `<div class="rule-btns">${buttons}</div>`;
 }
 
@@ -1577,25 +1590,39 @@ async function saveRule(rowId, decision) {
 
 // ─── Books the destination folder already holds ──────────────────────────────
 //
-// The generator writes two parallel ' | '-joined columns: 'incoming => existing'
-// and 'incoming size => existing size'. Zipped back into one object per
-// collision, because the sizes are the only thing on screen that tells two rips
-// of the same book from two different books — and they are never equal, so they
-// are shown to be judged, never used to decide.
+// The generator writes three parallel ' | '-joined columns, each entry of the
+// form 'incoming => existing': the names, the sizes, and the page counts.
+// Zipped back into one object per collision, because those numbers are the only
+// thing on screen that tells two rips of one book from two different books —
+// and they are shown to be judged, never used to decide.
 function existingCopies(row) {
   const names = String(row['Existing Copies'] || '').split('|')
     .map(s => s.trim()).filter(Boolean);
   const sizes = String(row['Existing Copy Sizes'] || '').split('|').map(s => s.trim());
+  const pages = String(row['Existing Copy Pages'] || '').split('|').map(s => s.trim());
   return names.map((entry, i) => {
     const halves = entry.split('=>').map(s => s.trim());
     const bytes = String(sizes[i] || '').split('=>').map(s => s.trim());
+    const leaves = String(pages[i] || '').split('=>').map(s => s.trim());
     return {
       incoming: halves[0] || '',
       existing: halves[1] || '',
       inSize: bytes[0] || '?',
       exSize: bytes[1] || '?',
+      inPages: leaves[0] || '',
+      exPages: leaves[1] || '',
     };
   });
+}
+
+// Size and pages together, as one phrase. An unreadable archive has no page
+// count and simply says nothing; '0p' is not that — it means the file was read
+// and holds no images at all, which is how a 238 MB HTML error page saved as a
+// .cbr announces itself.
+function measure(size, pages) {
+  if (!pages) return esc(size);
+  if (pages !== '0p') return `${esc(size)} · ${esc(pages)}`;
+  return `${esc(size)} · <span class="not-a-comic">${esc(pages)}</span>`;
 }
 
 // Naming the existing file is the whole job. Told only that a copy exists you
@@ -1614,7 +1641,8 @@ function duplicateNoteHtml(row) {
   const many = row.action === 'CONSOLIDATE_FOLDER' || row.action === 'CREATE_FOLDER_FROM_FOLDER';
   const lines = copies.map(c => `<div title="${esc(c.incoming + ' → ' + c.existing)}"
       >${many ? esc(c.incoming) + ' → ' : ''}<span class="have">${esc(c.existing)}</span>
-       <span class="size">(there ${esc(c.exSize)} · yours ${esc(c.inSize)})</span></div>`).join('');
+       <span class="size">(there ${measure(c.exSize, c.exPages)}
+        · yours ${measure(c.inSize, c.inPages)})</span></div>`).join('');
   return `<div class="dup-note${row.dupDecision ? ' decided' : ''}">${decided}${lines}</div>`;
 }
 
@@ -1634,7 +1662,7 @@ function duplicateButtonsHtml(row) {
   const buttons = DUP_CHOICES.map(c => `<button
       class="btn btn-sm rule-btn ${c.decision === active ? 'rule-btn-active' : 'btn-outline'}"
       onclick="setDuplicateDecision(${row.id}, '${c.decision}')"
-      title="${esc(c.hint)}">${esc(c.label)}</button>`).join('');
+      title="${esc(c.hint)}">${tick(c.decision === active)}${esc(c.label)}</button>`).join('');
   return `<div class="rule-btns">${buttons}</div>`;
 }
 

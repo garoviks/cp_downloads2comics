@@ -1171,25 +1171,26 @@ def find_existing_copies(src_rel: str, dest_folder: Path) -> List[Path]:
             if duplicates.looks_like_one_book([src_rel, c.relative_to(library_root)])]
 
 
-def describe_existing_copies(src_rels, dest_folder_name: str) -> Tuple[str, str]:
-    """The two CSV columns, as parallel ' | '-joined lists.
+def describe_existing_copies(src_rels, dest_folder_name: str) -> Tuple[str, str, str]:
+    """The three CSV columns, as parallel ' | '-joined lists.
 
     One entry per collision rather than one per incoming file, so a folder op
     carrying thirty files and a single loose file produce the same shape and the
-    UI needs one reader for both. Empty strings when nothing collides, which is
-    the overwhelming majority of rows.
+    UI needs one reader for all three. Empty strings when nothing collides, which
+    is the overwhelming majority of rows.
     """
     folder = dest_folder_name.strip('/').strip()
     if not folder:
-        return '', ''
+        return '', '', ''
     dest_folder = DEST_DIR / folder
-    names, sizes = [], []
+    names, sizes, pages = [], [], []
     for src_rel in src_rels:
         src = SRC_DIR / src_rel
         for copy in find_existing_copies(src_rel, dest_folder):
             names.append(f'{Path(src_rel).name} => {copy.relative_to(DEST_DIR)}')
             sizes.append(f'{human_size(src)} => {human_size(copy)}')
-    return ' | '.join(names), ' | '.join(sizes)
+            pages.append(f'{human_pages(src)} => {human_pages(copy)}')
+    return ' | '.join(names), ' | '.join(sizes), ' | '.join(pages)
 
 
 def human_size(path: Path) -> str:
@@ -1204,6 +1205,65 @@ def human_size(path: Path) -> str:
     except OSError:
         return '?'
     return f'{n / 1e9:.2f} GB' if n >= 1e9 else f'{n / 1e6:.0f} MB'
+
+
+PAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif', '.jxl'}
+_PAGE_COUNTS: Dict[str, Optional[int]] = {}
+
+
+def page_count(path: Path) -> Optional[int]:
+    """Images inside a comic archive, or None if it could not be read.
+
+    The stronger half of the evidence the size was standing in for: two packers
+    disagree about bytes but rarely about how many pages a book has, so 101
+    against 123 is two different editions where 213 MB against 238 MB was only
+    two different compressions.
+
+    Zero is an answer, not a failure — the first file this was run against was a
+    238 MB HTML error page saved with a .cbr extension. None is the failure: the
+    archive could not be read, so nothing is claimed about what is inside it.
+
+    Extensions lie in both directions, so the format is decided by reading the
+    file rather than its name. Cheap either way: a zip's directory sits at the
+    end and unrar reads headers only, both well under a tenth of a second.
+    """
+    key = str(path)
+    if key not in _PAGE_COUNTS:
+        _PAGE_COUNTS[key] = _read_page_count(path)
+    return _PAGE_COUNTS[key]
+
+
+RAR_MAGIC = b'Rar!\x1a\x07'
+
+
+def _read_page_count(path: Path) -> Optional[int]:
+    import subprocess
+    import zipfile
+    try:
+        if zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path) as z:
+                return _count_images(z.namelist())
+        with open(path, 'rb') as f:
+            if not f.read(len(RAR_MAGIC)).startswith(RAR_MAGIC):
+                # Neither archive format: it holds no pages, and that is known
+                # rather than assumed. `unrar lb` cannot say it — handed a file
+                # that is not a RAR at all it exits 0 and prints nothing, which
+                # would make 'not a comic' and 'could not read it' identical.
+                return 0
+        out = subprocess.run(['unrar', 'lb', str(path)], capture_output=True,
+                             text=True, timeout=120)
+        return _count_images(out.stdout.splitlines()) if out.returncode == 0 else None
+    except (OSError, ValueError, zipfile.BadZipFile, subprocess.SubprocessError):
+        return None
+
+
+def _count_images(names) -> int:
+    return sum(1 for n in names if Path(n).suffix.lower() in PAGE_EXTS)
+
+
+def human_pages(path: Path) -> str:
+    n = page_count(path)
+    return '' if n is None else f'{n}p'
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1255,6 +1315,7 @@ CSV_COLUMNS = [
     # folders by hand to find out what you already have.
     "Existing Copies",
     "Existing Copy Sizes",
+    "Existing Copy Pages",
 ]
 
 
@@ -1395,7 +1456,8 @@ def main():
         # Only an existing folder can already hold a copy; the other branch is
         # creating the folder, so there is nothing in it yet.
         if matched_folder:
-            row["Existing Copies"], row["Existing Copy Sizes"] = describe_existing_copies(
+            (row["Existing Copies"], row["Existing Copy Sizes"],
+             row["Existing Copy Pages"]) = describe_existing_copies(
                 [str(Path(folder_name) / f) for f in files_in_folder], dest_folder)
         rows.append(row)
 
@@ -1451,7 +1513,8 @@ def main():
             # CONSOLIDATE is the only file-level action that targets a folder
             # already on disk. The others create one, so nothing can be in it.
             if row.get("Action Type") == "CONSOLIDATE":
-                row["Existing Copies"], row["Existing Copy Sizes"] = describe_existing_copies(
+                (row["Existing Copies"], row["Existing Copy Sizes"],
+                 row["Existing Copy Pages"]) = describe_existing_copies(
                     [src_filename], row.get("Suggested Folder Name", ""))
 
             # Track statistics

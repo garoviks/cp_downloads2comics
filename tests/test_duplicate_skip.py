@@ -24,6 +24,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import paths
@@ -38,6 +39,17 @@ def row(**kw):
     r = {c: '' for c in CSV_COLUMNS}
     r.update(kw)
     return r
+
+
+def cbz(path: Path, pages: int, extra=()):
+    """A real comic archive holding `pages` images, plus any other names given."""
+    import zipfile
+    with zipfile.ZipFile(path, 'w') as z:
+        for i in range(pages):
+            z.writestr(f'{i:03d}.jpg', b'not really a jpeg')
+        for name in extra:
+            z.writestr(name, b'x')
+    return path
 
 
 class TestWhichFileWasFlagged(unittest.TestCase):
@@ -130,6 +142,77 @@ class TestThePlanHonoursTheAnswer(unittest.TestCase):
         self.assertEqual(len(op.moves), 1)
 
 
+class TestHowManyPages(unittest.TestCase):
+    """The evidence the file size was standing in for.
+
+    Two packers disagree about bytes but rarely about how many pages a book has,
+    so this is the number that tells two rips of one edition from two different
+    editions. It decides nothing on its own — same rule as the sizes.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='pages-'))
+        gen._PAGE_COUNTS.clear()
+
+    def tearDown(self):
+        gen._PAGE_COUNTS.clear()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_images_are_counted_and_everything_else_is_not(self):
+        p = cbz(self.tmp / 'twelve-pages.cbz', 12, extra=('ComicInfo.xml', 'readme.txt'))
+        self.assertEqual(gen.page_count(p), 12)
+
+    def test_a_download_that_is_not_an_archive_at_all_counts_zero(self):
+        """The file that motivated this: 238 MB of HTML named .cbr.
+
+        Zero is a finding, not a failure. It is how 'this is not a comic' looks
+        from the outside, and the UI colours it accordingly.
+        """
+        p = self.tmp / 'html-error-page.cbr'
+        p.write_text('<html><head><title>429 Too Many Requests</title>')
+        self.assertEqual(gen.page_count(p), 0)
+        self.assertEqual(gen.human_pages(p), '0p')
+
+    def test_a_file_that_is_not_an_archive_is_settled_without_asking_unrar(self):
+        """The signature check is the answer, not a shortcut to one.
+
+        The zero above is only trustworthy because we read the magic bytes
+        ourselves. Asking unrar instead looks like it works — this build exits 0
+        and prints nothing for anything that is not a RAR, which counts as zero
+        by accident — but that makes 'holds no pages' and 'could not read it'
+        the same answer, and leaves the distinction resting on a behaviour no
+        version of unrar promises.
+        """
+        p = self.tmp / 'not-an-archive.cbr'
+        p.write_bytes(b'this is not an archive')
+        with mock.patch('subprocess.run',
+                        side_effect=AssertionError('unrar was asked about a non-archive')):
+            self.assertEqual(gen.page_count(p), 0)
+
+    def test_an_archive_holding_no_images_counts_zero(self):
+        p = cbz(self.tmp / 'no-images.cbz', 0, extra=('index.html',))
+        self.assertEqual(gen.page_count(p), 0)
+
+    def test_a_rar_that_cannot_be_opened_claims_nothing(self):
+        """Says it is a RAR and then is not one. Unreadable is not the same as empty.
+
+        `unrar lb` exits 0 with no output for a file that is not a RAR at all,
+        so trusting its exit code alone would report this as a confident zero.
+        """
+        p = self.tmp / 'truncated.cbr'
+        p.write_bytes(gen.RAR_MAGIC + b'\x00 truncated nonsense')
+        self.assertIsNone(gen.page_count(p))
+        self.assertEqual(gen.human_pages(p), '')
+
+    def test_the_extension_does_not_decide_the_format(self):
+        """.cbr files are routinely zips, and the other way round."""
+        p = cbz(self.tmp / 'zip-named-cbr.cbr', 7)
+        self.assertEqual(gen.page_count(p), 7)
+
+    def test_a_missing_file_is_silence_rather_than_an_error(self):
+        self.assertIsNone(gen.page_count(self.tmp / 'gone.cbz'))
+
+
 class TestWhatTheGeneratorReports(unittest.TestCase):
     """Only the destination folder is searched, and the demotion rules still apply."""
 
@@ -139,20 +222,22 @@ class TestWhatTheGeneratorReports(unittest.TestCase):
         self.src.mkdir()
         self.folder = self.dest / 'Harley Quinn'
         self.folder.mkdir(parents=True)
-        (self.folder / 'Harley Quinn v02 - Power Outage (2015).cbz').write_text('x' * 10)
+        cbz(self.folder / 'Harley Quinn v02 - Power Outage (2015).cbz', 5)
         (self.dest / 'Elsewhere').mkdir()
-        (self.dest / 'Elsewhere' / 'Harley Quinn v02 - Power Outage (2015).cbz').write_text('x')
+        cbz(self.dest / 'Elsewhere' / 'Harley Quinn v02 - Power Outage (2015).cbz', 5)
         self.saved = (gen.SRC_DIR, gen.DEST_DIR)
         gen.SRC_DIR, gen.DEST_DIR = self.src, self.dest
         gen._DEST_FOLDER_INDEX.clear()
+        gen._PAGE_COUNTS.clear()
 
     def tearDown(self):
         gen.SRC_DIR, gen.DEST_DIR = self.saved
         gen._DEST_FOLDER_INDEX.clear()
+        gen._PAGE_COUNTS.clear()
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def _incoming(self, name):
-        (self.src / name).write_text('y' * 20)
+    def _incoming(self, name, pages=3):
+        cbz(self.src / name, pages)
         return name
 
     def test_another_rip_of_the_same_book_is_found(self):
@@ -170,21 +255,24 @@ class TestWhatTheGeneratorReports(unittest.TestCase):
 
     def test_a_copy_elsewhere_in_the_library_is_not_the_folder_this_is_headed_for(self):
         """Scope is the destination folder — the whole-library view is its own report."""
-        names, _ = gen.describe_existing_copies(
+        names, _, _ = gen.describe_existing_copies(
             [self._incoming('Harley Quinn v02 - Power Outage (2016).cbz')], '/Elsewhere/')
         self.assertEqual(names.count('=>'), 1)
         self.assertIn('Elsewhere', names)
 
-    def test_the_two_columns_are_parallel_and_name_both_halves(self):
+    def test_the_three_columns_are_parallel_and_name_both_halves(self):
         """The UI zips these back together by position, so the shape is a contract."""
-        names, sizes = gen.describe_existing_copies(
-            [self._incoming('Harley Quinn v02 - Power Outage (2016).cbz')], '/Harley Quinn/')
+        names, sizes, pages = gen.describe_existing_copies(
+            [self._incoming('Harley Quinn v02 - Power Outage (2016).cbz', pages=3)],
+            '/Harley Quinn/')
         self.assertEqual(
             names,
             'Harley Quinn v02 - Power Outage (2016).cbz'
             ' => Harley Quinn/Harley Quinn v02 - Power Outage (2015).cbz')
         self.assertEqual(sizes.count('=>'), names.count('=>'))
+        self.assertEqual(pages.count('=>'), names.count('=>'))
         self.assertEqual(sizes, '0 MB => 0 MB')
+        self.assertEqual(pages, '3p => 5p')
 
     def test_a_row_with_no_destination_folder_asks_nothing(self):
         """A blank folder name is not the library root.
@@ -195,7 +283,8 @@ class TestWhatTheGeneratorReports(unittest.TestCase):
         on a row that has no destination to compare against.
         """
         self.assertEqual(gen.describe_existing_copies(
-            [self._incoming('Harley Quinn v02 - Power Outage (2016).cbz')], ''), ('', ''))
+            [self._incoming('Harley Quinn v02 - Power Outage (2016).cbz')], ''),
+            ('', '', ''))
 
 
 def _run(args, tmp):

@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **200 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **207 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -902,7 +902,8 @@ cp_downloads2comics/tests/
 ├── test_matching.py             13 — whole-word publisher/specific matching
 ├── test_mover_loose_files.py     7 — CSV column consumed verbatim
 ├── test_library_duplicates.py   10 — the duplicate report's demotion rules
-└── test_duplicate_skip.py       16 — the flag, the decision, and the refusal
+└── test_duplicate_skip.py       23 — the flag, the page count, the decision,
+                                      and the refusal
 ```
 
 **Why `TestAcceptedMerges` exists.** `baseline_series_keys.json` is a snapshot, so
@@ -1679,8 +1680,8 @@ The chain is four hops and every one of them was a place to get it wrong:
 
 | hop | what it does | the trap |
 |---|---|---|
-| generator | indexes the destination folder, writes `Existing Copies` and `Existing Copy Sizes` | a blank folder name resolves to the library root, which would flag everything |
-| UI | names the existing file and both sizes; two opt-in buttons | telling you a copy exists without naming it is the version you rejected |
+| generator | indexes the destination folder, writes `Existing Copies`, `Existing Copy Sizes` and `Existing Copy Pages` | a blank folder name resolves to the library root, which would flag everything |
+| UI | names the existing file, both sizes and both page counts; two opt-in buttons | telling you a copy exists without naming it is the version you rejected |
 | server | writes the decisions to a temp JSON, passes `--duplicate-decisions` | — |
 | mover | skips, files anyway, or **refuses to execute** | `--no-confirm` means a warning is printed to nobody |
 
@@ -1697,10 +1698,43 @@ selection means *all* rows, so the decision needed its own channel.
 
 On the live batch: 116 rows, 3 collisions found (`Blood Type v01`, `Free Planet v02`,
 `Sleeper Book 01`), 0 same-key pairs rejected by the demotion checks — so the extra rules cost
-nothing here while still holding back the Harley Quinn and `Book Two` classes. 16 tests; six
-mutations, all killed — the bare-name key, `keep` not counting as an answer, skip/keep
-swapped, warning instead of refusing, the demotion checks dropped, and the blank-folder guard
-removed.
+nothing here while still holding back the Harley Quinn and `Book Two` classes.
+
+**Page counts, for the same reason sizes are shown and not used.** Two packers disagree about
+bytes but rarely about how many pages a book has, so the count is the more honest of the two
+numbers — and like the size it is evidence for you, never an input to the rule. It earned its
+place on the first run: of the three pairs, `Blood Type` reads 101p against 123p and
+`Free Planet` 159p against 119p, so those are different editions rather than the same file
+twice, which the sizes alone only hinted at.
+
+Two distinctions the display depends on:
+
+- **`0p` is an answer; blank is not.** Zero means the archive was read and holds no images,
+  and the UI colours it as an alarm. The first file this ever ran against was
+  `Blood Type v01 (2026) … .cbr` — 238 MB of `429 Too Many Requests` HTML with a comic's
+  extension. Blank means the archive could not be read, and claims nothing.
+- **The extension does not decide the format, and `unrar` cannot make that call.** `.cbr`
+  files are routinely zips, so `zipfile.is_zipfile()` goes first and the RAR signature is
+  checked by hand after. That check is the answer, not a shortcut to one: handed something
+  that is not a RAR at all, `unrar lb` exits 0 and prints nothing, which would make
+  "holds no pages" and "could not read it" the same result.
+
+**The tick boxes.** Every answer button carries `☑`/`☐` ahead of its label, on the duplicate
+buttons and the rule buttons alike. Colour change alone read as decoration; an empty box
+beside a ticked one says the thing a single coloured button cannot — that there was a choice,
+and which way it went. Same width either way, so a row does not shift when clicked.
+
+23 tests; eleven mutations, all killed. Six on the decision (the bare-name key, `keep` not
+counting as an answer, skip/keep swapped, warning instead of refusing, the demotion checks
+dropped, the blank-folder guard removed) and five on the counting (the signature check
+removed, a failed `unrar` counted as zero, every archive member counted rather than the
+images, the two halves of the column swapped, unreadable printed as `Nonep`).
+
+One of those five survived its first run and is the reason the signature check is tested the
+way it is. Removing the check changed no result, because this `unrar` build happens to return
+zero-with-no-output for anything that is not a RAR — the test was passing through unrar's
+behaviour instead of pinning ours. It now asserts that a non-archive is settled *without
+unrar being asked at all*, which is the actual guarantee.
 
 ---
 
