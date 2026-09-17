@@ -1244,10 +1244,23 @@ ACE_MAGIC = b'**ACE**'  # sits at offset 7, not at the start of the file
 
 
 def _read_page_count(path: Path) -> Optional[int]:
-    """Knowing only zip and rar was the same mistake as PAGE_EXTS: a format we
+    names = list_members(path)
+    return None if names is None else _count_images(names)
+
+
+def list_members(path: Path) -> Optional[List[str]]:
+    """Names of everything inside a comic archive.
+
+    Three answers, and the difference between the last two is the whole point:
+    a list of names, an empty list meaning this is not an archive at all and
+    therefore holds nothing, or None meaning it claims to be an archive and
+    could not be opened, so nothing is asserted about its contents.
+
+    Knowing only zip and rar was the same mistake as PAGE_EXTS: a format we
     cannot name reads as a file holding no pages, so the alarm fires on a good
     comic. The library holds 7z, tar and ACE under .cbr and .cbz names, and the
-    first five of those it found were books of 234, 161, 50, 42 and 20 pages.
+    first eight of those found were books of 234, 168, 161, 138, 137, 50, 42
+    and 20 pages.
     """
     import subprocess
     import tarfile
@@ -1255,7 +1268,7 @@ def _read_page_count(path: Path) -> Optional[int]:
     try:
         if zipfile.is_zipfile(path):
             with zipfile.ZipFile(path) as z:
-                return _count_images(z.namelist())
+                return z.namelist()
         with open(path, 'rb') as f:
             head = f.read(len(ACE_MAGIC) + 7)
         if head.startswith(ZIP_MAGIC):
@@ -1267,7 +1280,7 @@ def _read_page_count(path: Path) -> Optional[int]:
         if head.startswith(RAR_MAGIC):
             out = subprocess.run(['unrar', 'lb', str(path)], capture_output=True,
                                  text=True, timeout=120)
-            return _count_images(out.stdout.splitlines()) if out.returncode == 0 else None
+            return out.stdout.splitlines() if out.returncode == 0 else None
         if head.startswith(SEVENZ_MAGIC):
             # -slt prints `Path = name`, which needs no column arithmetic and
             # cannot be confused by a filename containing spaces.
@@ -1275,8 +1288,8 @@ def _read_page_count(path: Path) -> Optional[int]:
                                  capture_output=True, text=True, timeout=120)
             if out.returncode != 0:
                 return None
-            return _count_images(line[len('Path = '):] for line in out.stdout.splitlines()
-                                 if line.startswith('Path = '))
+            return [line[len('Path = '):] for line in out.stdout.splitlines()
+                    if line.startswith('Path = ')]
         if head[7:].startswith(ACE_MAGIC):
             # A real archive from 1998 that neither 7z nor unrar will open here.
             # We cannot see inside it, so we say nothing about what it holds
@@ -1286,12 +1299,12 @@ def _read_page_count(path: Path) -> Optional[int]:
         # it can only be tested by opening it — after the cheap checks above.
         if tarfile.is_tarfile(path):
             with tarfile.open(path) as t:
-                return _count_images(t.getnames())
-        # No format we can name: it holds no pages, and that is known rather
+                return t.getnames()
+        # No format we can name: it holds nothing, and that is known rather
         # than assumed. `unrar lb` cannot say it — handed a file that is not a
         # RAR at all it exits 0 and prints nothing, which would make 'not a
         # comic' and 'could not read it' identical.
-        return 0
+        return []
     except (OSError, ValueError, zipfile.BadZipFile, tarfile.TarError,
             subprocess.SubprocessError):
         return None
