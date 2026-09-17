@@ -191,6 +191,46 @@ class TestHowManyPages(unittest.TestCase):
         self.assertIsNone(gen.page_count(p))
         self.assertEqual(gen.human_pages(p), '')
 
+    def test_the_other_archive_formats_hiding_under_cbr_are_read(self):
+        """A .cbr holding 7z, and a .cbr holding tar. Both are real comics.
+
+        Knowing only zip and rar was the PAGE_EXTS mistake in a second place:
+        an unrecognised format fell through to zero, so the sweep accused five
+        good books — 234, 161, 50, 42 and 20 pages — of not being comics.
+        """
+        import subprocess
+        import tarfile
+        src = self.tmp / 'pages'
+        src.mkdir()
+        for i in range(4):
+            (src / f'{i:03d}.jpg').write_bytes(b'x')
+        (src / 'notes.txt').write_bytes(b'x')
+
+        seven = self.tmp / 'packed-as-7z.cbr'
+        rc = subprocess.run(['7z', 'a', '-t7z', str(seven), str(src / '*')],
+                            capture_output=True).returncode
+        self.assertEqual(rc, 0, '7z is needed for this test')
+        self.assertTrue(seven.read_bytes().startswith(gen.SEVENZ_MAGIC))
+        self.assertEqual(gen.page_count(seven), 4)
+
+        tar = self.tmp / 'packed-as-tar.cbr'
+        with tarfile.open(tar, 'w') as t:
+            for f in sorted(src.iterdir()):
+                t.add(f, arcname=f.name)
+        self.assertEqual(gen.page_count(tar), 4)
+
+    def test_an_ace_archive_claims_nothing(self):
+        """ACE is a real archive format with no reader installed here.
+
+        Neither 7z nor unrar will open one, so we cannot see inside. That is
+        'could not read it', not 'holds no pages' — the same distinction the
+        truncated zip above turns on, reached by a different route.
+        """
+        p = self.tmp / 'old-scanlation.cbr'
+        p.write_bytes(b'\xd6\x9d1\x00\x00\x00\x90' + gen.ACE_MAGIC + b'\x00' * 64)
+        self.assertIsNone(gen.page_count(p))
+        self.assertEqual(gen.human_pages(p), '')
+
     def test_a_download_that_is_not_an_archive_at_all_counts_zero(self):
         """The file that motivated this: 238 MB of HTML named .cbr.
 

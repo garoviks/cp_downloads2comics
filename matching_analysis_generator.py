@@ -1239,33 +1239,61 @@ def page_count(path: Path) -> Optional[int]:
 
 RAR_MAGIC = b'Rar!\x1a\x07'
 ZIP_MAGIC = b'PK\x03\x04'
+SEVENZ_MAGIC = b'7z\xbc\xaf\x27\x1c'
+ACE_MAGIC = b'**ACE**'  # sits at offset 7, not at the start of the file
 
 
 def _read_page_count(path: Path) -> Optional[int]:
+    """Knowing only zip and rar was the same mistake as PAGE_EXTS: a format we
+    cannot name reads as a file holding no pages, so the alarm fires on a good
+    comic. The library holds 7z, tar and ACE under .cbr and .cbz names, and the
+    first five of those it found were books of 234, 161, 50, 42 and 20 pages.
+    """
     import subprocess
+    import tarfile
     import zipfile
     try:
         if zipfile.is_zipfile(path):
             with zipfile.ZipFile(path) as z:
                 return _count_images(z.namelist())
         with open(path, 'rb') as f:
-            head = f.read(max(len(RAR_MAGIC), len(ZIP_MAGIC)))
+            head = f.read(len(ACE_MAGIC) + 7)
         if head.startswith(ZIP_MAGIC):
             # Starts like a zip but would not open, so its central directory is
             # damaged. Truncated downloads look like this. The file claims to be
             # an archive and we cannot see inside it, which is not the same as
             # seeing inside and finding no pages.
             return None
-        if not head.startswith(RAR_MAGIC):
-            # Neither archive format: it holds no pages, and that is known
-            # rather than assumed. `unrar lb` cannot say it — handed a file
-            # that is not a RAR at all it exits 0 and prints nothing, which
-            # would make 'not a comic' and 'could not read it' identical.
-            return 0
-        out = subprocess.run(['unrar', 'lb', str(path)], capture_output=True,
-                             text=True, timeout=120)
-        return _count_images(out.stdout.splitlines()) if out.returncode == 0 else None
-    except (OSError, ValueError, zipfile.BadZipFile, subprocess.SubprocessError):
+        if head.startswith(RAR_MAGIC):
+            out = subprocess.run(['unrar', 'lb', str(path)], capture_output=True,
+                                 text=True, timeout=120)
+            return _count_images(out.stdout.splitlines()) if out.returncode == 0 else None
+        if head.startswith(SEVENZ_MAGIC):
+            # -slt prints `Path = name`, which needs no column arithmetic and
+            # cannot be confused by a filename containing spaces.
+            out = subprocess.run(['7z', 'l', '-ba', '-slt', str(path)],
+                                 capture_output=True, text=True, timeout=120)
+            if out.returncode != 0:
+                return None
+            return _count_images(line[len('Path = '):] for line in out.stdout.splitlines()
+                                 if line.startswith('Path = '))
+        if head[7:].startswith(ACE_MAGIC):
+            # A real archive from 1998 that neither 7z nor unrar will open here.
+            # We cannot see inside it, so we say nothing about what it holds
+            # rather than calling a comic we simply cannot read an empty one.
+            return None
+        # tar carries its `ustar` mark 257 bytes in rather than at the front, so
+        # it can only be tested by opening it — after the cheap checks above.
+        if tarfile.is_tarfile(path):
+            with tarfile.open(path) as t:
+                return _count_images(t.getnames())
+        # No format we can name: it holds no pages, and that is known rather
+        # than assumed. `unrar lb` cannot say it — handed a file that is not a
+        # RAR at all it exits 0 and prints nothing, which would make 'not a
+        # comic' and 'could not read it' identical.
+        return 0
+    except (OSError, ValueError, zipfile.BadZipFile, tarfile.TarError,
+            subprocess.SubprocessError):
         return None
 
 

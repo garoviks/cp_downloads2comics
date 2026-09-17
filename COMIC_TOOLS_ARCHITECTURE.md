@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **209 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **211 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -902,7 +902,7 @@ cp_downloads2comics/tests/
 ├── test_matching.py             13 — whole-word publisher/specific matching
 ├── test_mover_loose_files.py     7 — CSV column consumed verbatim
 ├── test_library_duplicates.py   10 — the duplicate report's demotion rules
-└── test_duplicate_skip.py       25 — the flag, the page count, the decision,
+└── test_duplicate_skip.py       27 — the flag, the page count, the decision,
                                       and the refusal
 ```
 
@@ -1739,11 +1739,24 @@ whose first four bytes say zip but which will not open was being called "holds n
 the truth is "could not be opened" — the exact conflation the RAR branch already guarded
 against, missing from the zip branch. Both are fixed and pinned by tests.
 
-The remaining 74 are real: 54 files that are not comics (34 with no archive signature at all,
-19 that are nothing but zero bytes, and one `.cbr` containing `.exe` and `.bat` rather than
-pages) and 20 damaged archives, 6.0 GB in total. Listed in `LIBRARY_BROKEN_FILES.md`. None of
-this was visible to any other part of the pipeline — every one of these files has a plausible
-name and a plausible size.
+Reading that report back caught a third defect of the same shape, and a wrong label. The
+counter knew only zip and rar, so a `.cbr` holding 7z or tar fell through to zero — eight
+ordinary comics of 234, 168, 161, 138, 137, 50, 42 and 20 pages were listed as junk. Twice
+now the allowlist has been the bug, once for page extensions and once for containers, so
+`_read_page_count` now names 7z and tar as readable, and ACE as an archive it cannot read
+(None, not zero — no reader is installed, and silence is the honest answer).
+
+The wrong label was mine: 19 files were described as "all zero bytes" when they are nothing
+of the kind. Each is full length with one contiguous NUL run at the *front* and real data
+after it — 63% to 99.99% NUL, the survivor in one case being 187 MB. The archive header lives
+at byte 0, so they are unreadable regardless, but "all zero bytes" was not true of a single
+one of them.
+
+That leaves 66 genuinely broken files, 5.6 GB: 44 holding no pages (17 with no archive
+signature at all, 19 with NUL damage, 4 empty, 4 that open and contain no images — including
+one `.cbr` of `.exe` and `.bat`) and 22 that cannot be read (20 damaged archives, 2 ACE).
+Listed in `LIBRARY_BROKEN_FILES.md`. None of this was visible to any other part of the
+pipeline — every one of these files has a plausible name and a plausible size.
 
 One of those five mutations survived its first run and is the reason the signature check is
 tested the way it is. Removing the check changed no result, because this `unrar` build happens to return
