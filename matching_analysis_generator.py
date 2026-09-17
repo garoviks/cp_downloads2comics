@@ -1207,7 +1207,11 @@ def human_size(path: Path) -> str:
     return f'{n / 1e9:.2f} GB' if n >= 1e9 else f'{n / 1e6:.0f} MB'
 
 
-PAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif', '.jxl'}
+# .jpe and .jfif are JPEG too. Leaving them out cost 159 false alarms on the
+# first library sweep — every KissManga rip names its pages `001 - proxy..jpe`,
+# so whole series read as holding no images at all.
+PAGE_EXTS = {'.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.gif', '.webp',
+             '.bmp', '.avif', '.jxl', '.tif', '.tiff'}
 _PAGE_COUNTS: Dict[str, Optional[int]] = {}
 
 
@@ -1234,6 +1238,7 @@ def page_count(path: Path) -> Optional[int]:
 
 
 RAR_MAGIC = b'Rar!\x1a\x07'
+ZIP_MAGIC = b'PK\x03\x04'
 
 
 def _read_page_count(path: Path) -> Optional[int]:
@@ -1244,12 +1249,19 @@ def _read_page_count(path: Path) -> Optional[int]:
             with zipfile.ZipFile(path) as z:
                 return _count_images(z.namelist())
         with open(path, 'rb') as f:
-            if not f.read(len(RAR_MAGIC)).startswith(RAR_MAGIC):
-                # Neither archive format: it holds no pages, and that is known
-                # rather than assumed. `unrar lb` cannot say it — handed a file
-                # that is not a RAR at all it exits 0 and prints nothing, which
-                # would make 'not a comic' and 'could not read it' identical.
-                return 0
+            head = f.read(max(len(RAR_MAGIC), len(ZIP_MAGIC)))
+        if head.startswith(ZIP_MAGIC):
+            # Starts like a zip but would not open, so its central directory is
+            # damaged. Truncated downloads look like this. The file claims to be
+            # an archive and we cannot see inside it, which is not the same as
+            # seeing inside and finding no pages.
+            return None
+        if not head.startswith(RAR_MAGIC):
+            # Neither archive format: it holds no pages, and that is known
+            # rather than assumed. `unrar lb` cannot say it — handed a file
+            # that is not a RAR at all it exits 0 and prints nothing, which
+            # would make 'not a comic' and 'could not read it' identical.
+            return 0
         out = subprocess.run(['unrar', 'lb', str(path)], capture_output=True,
                              text=True, timeout=120)
         return _count_images(out.stdout.splitlines()) if out.returncode == 0 else None

@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **207 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **209 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -902,7 +902,7 @@ cp_downloads2comics/tests/
 ├── test_matching.py             13 — whole-word publisher/specific matching
 ├── test_mover_loose_files.py     7 — CSV column consumed verbatim
 ├── test_library_duplicates.py   10 — the duplicate report's demotion rules
-└── test_duplicate_skip.py       23 — the flag, the page count, the decision,
+└── test_duplicate_skip.py       25 — the flag, the page count, the decision,
                                       and the refusal
 ```
 
@@ -1730,8 +1730,23 @@ dropped, the blank-folder guard removed) and five on the counting (the signature
 removed, a failed `unrar` counted as zero, every archive member counted rather than the
 images, the two halves of the column swapped, unreadable printed as `Nonep`).
 
-One of those five survived its first run and is the reason the signature check is tested the
-way it is. Removing the check changed no result, because this `unrar` build happens to return
+**What the first library sweep actually found.** Run across all 29,515 archives (176 minutes),
+it flagged 233 files — and 159 of those were the counter's own fault. Every KissManga rip
+names its pages `001 - proxy..jpe`, and `.jpe` was missing from `PAGE_EXTS`, so whole manga
+series were reported as holding no images. An incomplete allowlist does not under-report
+quietly; it accuses a good comic of not being one. A second defect surfaced with it: a file
+whose first four bytes say zip but which will not open was being called "holds no pages" when
+the truth is "could not be opened" — the exact conflation the RAR branch already guarded
+against, missing from the zip branch. Both are fixed and pinned by tests.
+
+The remaining 74 are real: 54 files that are not comics (34 with no archive signature at all,
+19 that are nothing but zero bytes, and one `.cbr` containing `.exe` and `.bat` rather than
+pages) and 20 damaged archives, 6.0 GB in total. Listed in `LIBRARY_BROKEN_FILES.md`. None of
+this was visible to any other part of the pipeline — every one of these files has a plausible
+name and a plausible size.
+
+One of those five mutations survived its first run and is the reason the signature check is
+tested the way it is. Removing the check changed no result, because this `unrar` build happens to return
 zero-with-no-output for anything that is not a RAR — the test was passing through unrar's
 behaviour instead of pinning ours. It now asserts that a non-archive is settled *without
 unrar being asked at all*, which is the actual guarantee.

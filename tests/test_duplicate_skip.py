@@ -162,6 +162,35 @@ class TestHowManyPages(unittest.TestCase):
         p = cbz(self.tmp / 'twelve-pages.cbz', 12, extra=('ComicInfo.xml', 'readme.txt'))
         self.assertEqual(gen.page_count(p), 12)
 
+    def test_the_rarer_jpeg_spellings_are_still_pages(self):
+        """.jpe is a JPEG. Not knowing that cost 159 false alarms.
+
+        The first sweep of the library reported whole manga series as holding no
+        images, because every KissManga rip names its pages `001 - proxy..jpe`.
+        An allowlist that is missing a spelling does not under-report quietly —
+        it accuses a perfectly good comic of not being one.
+        """
+        p = self.tmp / 'kissmanga-style.cbz'
+        import zipfile
+        with zipfile.ZipFile(p, 'w') as z:
+            for i in range(5):
+                z.writestr(f'{i:03d} - proxy..jpe.jpe', b'x')
+            z.writestr('006.jfif', b'x')
+            z.writestr('007.tiff', b'x')
+        self.assertEqual(gen.page_count(p), 7)
+
+    def test_an_archive_too_damaged_to_open_claims_nothing(self):
+        """Says zip in its first four bytes, then will not open.
+
+        A truncated download looks exactly like this. It must not read as
+        'holds no pages' — that is the alarm reserved for files which opened
+        fine and turned out not to be comics, and this one never opened at all.
+        """
+        p = self.tmp / 'truncated.cbz'
+        p.write_bytes(gen.ZIP_MAGIC + b'\x14\x00' + b'\x00' * 200)
+        self.assertIsNone(gen.page_count(p))
+        self.assertEqual(gen.human_pages(p), '')
+
     def test_a_download_that_is_not_an_archive_at_all_counts_zero(self):
         """The file that motivated this: 238 MB of HTML named .cbr.
 
