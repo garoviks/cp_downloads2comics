@@ -184,11 +184,25 @@ under the full issue's name — worse than the broken original, which at least
 failed openly. **It has been reverted**; the original is back in place and the
 fragment is parked at `/tmp/anna_mercury_001_fragment.cbz`.
 
-`repack_comics.py` now refuses these by default, naming the NUL run as the
+`repack_comics.py` now refuses these by default, naming the damage as the
 reason, and `--salvage-fragments` overrides it for a caller who wants the pages
 anyway. Even under the override it reports `pages_lost` as unknown rather than
 computing `claimed - recovered`, which would measure how far the lister read and
 not how many pages the comic had.
+
+**A later sweep of all 20,569 RARs found a fragment this table's test would have
+missed.** `Doom Patrol 04.cbr` ends in exactly *one* zero byte, so the NUL
+measure cleared it as an ordinary truncation — but 7z can account for only
+1.6 MB of its 22.5 MB, and the remaining 20.9 MB is real bytes no reader can
+reach. Same outcome, different damage. The check now asks both questions: how
+much NUL the file ends in, and what share of it no lister can reach. Truncated
+files leave 0%–18.6% unreached, fragments 39.7% or more.
+
+Three more turned up with it — `Mazer in Prison (Comic).cbr`,
+`(078) Ultimate X-Men #070.cbr` and `(020) Ultimate X-Men #019.cbr`. All four are
+already listed under *4 no tool here can read* below, which prescribes the same
+fix, so nothing moves; they are named here because they are the same failure and
+a later sweep should not have to work that out twice.
 
 **Decided: re-download, do not salvage.** The originals stay where they are and
 all seven are on `LIBRARY_REDOWNLOAD.md`. A file that refuses to open is honest
@@ -272,15 +286,35 @@ There was a third fault, and it was mine rather than the code's:
    `overwritten_bytes()`, which measures the NUL run the listers cannot see past;
    pinned by four tests in `tests/test_repack.py`.
 
-### Recommended: teach the counter to fall back to `unar`
+### ~~Recommended: teach the counter to fall back to `unar`~~ — measured, and rejected
 
 `list_members` calls `unrar lb` and treats a non-zero exit as "cannot read
-this". On this evidence it should then try `lsar`, which answers for 19 of the
-21 files `unrar` gave up on. Without that, any future sweep will keep
-rediscovering these same files as broken.
+this". The obvious fix was to try `lsar` next, since it answers for files
+`unrar` gives up on. Rather than land a one-line change that re-reads every RAR
+in the library, it was measured first — all **20,569** RARs, both directions:
 
-Deliberately not done yet: it changes how every RAR in a 29,515-file library is
-counted, which is a decision to take on purpose rather than in passing.
+| | |
+|---|---|
+| `unrar` refuses | 9 |
+| of those, `lsar` can count | 9 — 37 pages |
+| RARs `unrar` reads, sampled as a control | 400 |
+| **counts the two tools disagree on** | **0** |
+
+The control sample is clean, so the fallback would never overwrite a count that
+was already right. It was still rejected, on what the nine files are: **every
+one of them is a fragment**, and all nine are on the re-download list already.
+The 37 pages are not 37 pages recovered — they are how far `lsar` reads into
+nine comics before hitting the damage.
+
+The fallback's whole effect here would be to turn nine honest "unreadable"
+results into nine small, confident, wrong page counts. Unreadable is the right
+answer for all nine, and a wrong number is harder to notice than a failure.
+**Decision: leave `list_members` as it is.**
+
+The sweep was still worth its three hours. It is what found `Doom Patrol 04` —
+a fragment that ends in a single zero byte, which the NUL-based check called
+truncated and would have rescued into a 2-page file under a full issue's name.
+The check now also measures how much of the file no lister can reach.
 
 ### On the three files that are data all the way through
 

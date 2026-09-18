@@ -603,7 +603,57 @@ def overwritten_bytes(path, chunk=1 << 20):
     return n
 
 
+def unreached_bytes(path):
+    """How much of the file the lister never accounted for.
+
+    overwritten_bytes() asks whether the damage is zeros. This asks the question
+    that actually matters and does not care what the damage is made of: does the
+    listing describe the whole file, or a small piece at the front of it?
+
+    `7z l` reports Physical Size for what it could parse and Tail Size for
+    everything left over. On a truncated download the tail is the fraction of a
+    page that was being written when the connection dropped — measured here,
+    between 0% and 18.6% of the file, and mostly under 2%. On a fragment the
+    tail is most of the file: 39.7% at the narrowest, usually over 90%.
+
+    The NUL test missed one. `Doom Patrol 04.cbr` is 22.5 MB and ends in a
+    single zero byte, so it read as an ordinary truncation and would have been
+    rescued into a 2-page .cbz carrying a full issue's name — the exact outcome
+    the NUL check was written to prevent. 7z accounts for 1.6 MB of it. The
+    other 20.9 MB is not zeros; it is real bytes the reader cannot reach, which
+    is a different kind of damage with the same consequence.
+
+    Returns None when 7z cannot say, which the caller treats as no evidence
+    rather than as evidence of health.
+    """
+    try:
+        out = subprocess.run(['7z', 'l', str(path)], capture_output=True,
+                             text=True, timeout=300).stdout
+    except (subprocess.SubprocessError, OSError):
+        return None
+    found = re.search(r'Tail Size = (\d+)', out)
+    return int(found.group(1)) if found else None
+
+
 OVERWRITTEN_MIN = 1 << 20
+
+# Above this share of the file left unaccounted for, what the lister reached is
+# a piece of the comic and not the comic. The measured gap is 18.6% against
+# 39.7% with nothing in between, so a third sits clear of both edges.
+UNREACHED_MAX = 0.30
+
+
+def is_fragment(path):
+    """Whether what a tolerant extractor gets out of this file is a comic or a
+    piece of one. Two independent signals, either of which is enough: the file
+    ends in megabytes of NUL, or most of it is past what any lister can index.
+    The second subsumes the first for every file measured here, but the first is
+    what the reports explain and it names the cause, so both are kept."""
+    size = path.stat().st_size
+    unreached = unreached_bytes(path)
+    return (overwritten_bytes(path) >= OVERWRITTEN_MIN
+            or (unreached is not None and size
+                and unreached / size >= UNREACHED_MAX))
 
 # Set once from main(). A module flag rather than an argument because the job
 # functions share one signature so that main() can dispatch on the plan's kind,
@@ -623,6 +673,8 @@ def plan_rescue(path):
             'pages_before': claimed_pages(path) if done is None else done,
             'size': path.stat().st_size,
             'overwritten': nulls, 'convert': False,
+            'unreached': unreached_bytes(path),
+            'fragment': is_fragment(path),
             'nothing_to_do': done is not None,
             'dest': str(path.with_suffix('.cbz'))}
 
@@ -646,19 +698,24 @@ def do_rescue(path, convert, work):
     Salvage is never silent. A caller reading the log can always tell a rescue
     that lost nothing from one that lost a page.
 
-    Files ending in a NUL run are refused outright, because for those the one
-    number this function reports honestly cannot be computed — see
-    overwritten_bytes(). `--salvage-fragments` overrides the refusal for a caller
-    who wants the pages anyway and has read what they are getting.
+    Fragments are refused outright, because for those the one number this
+    function reports honestly cannot be computed — see is_fragment().
+    `--salvage-fragments` overrides the refusal for a caller who wants the pages
+    anyway and has read what they are getting.
     """
     claimed = claimed_pages(path)
     nulls = overwritten_bytes(path)
-    if nulls >= OVERWRITTEN_MIN and not SALVAGE_FRAGMENTS:
+    unreached = unreached_bytes(path)
+    fragment = is_fragment(path)
+    if fragment and not SALVAGE_FRAGMENTS:
+        why = (f'ends in {mb(nulls)} of NUL' if nulls >= OVERWRITTEN_MIN
+               else f'{mb(unreached)} of {mb(path.stat().st_size)} is past '
+                    f'anything a lister can reach')
         raise RuntimeError(
-            f'ends in {mb(nulls)} of NUL — overwritten, not truncated. The '
-            f'pages that still read are a fragment and the real page count is '
-            f'unknowable, so the loss cannot be reported. Use '
-            f'--salvage-fragments to take them anyway.')
+            f'{why} — a fragment, not a truncation. The pages that still read '
+            f'are a piece of the comic and the real page count is unknowable, '
+            f'so the loss cannot be reported. Use --salvage-fragments to take '
+            f'them anyway.')
     final = path.with_suffix('.cbz')
     staged = stage(path, final)
     try:
@@ -694,15 +751,14 @@ def do_rescue(path, convert, work):
         raise
 
     _finish(staged, path, new_file, final)
-    fragment = nulls >= OVERWRITTEN_MIN
     return {'pages_after': len(good), 'converted': converted,
             'pages_claimed': claimed, 'overwritten': nulls,
-            'fragment': fragment,
+            'unreached': unreached, 'fragment': fragment,
             # Only meaningful for a truncated file, where the lister reached the
-            # end and the count it gave is the real one. On an overwritten file
-            # the lister stopped where the zeros started, so claimed - recovered
-            # measures the tool's reach and not the loss, and reporting it would
-            # be a confident wrong number in place of an honest unknown.
+            # end and the count it gave is the real one. On a fragment the lister
+            # stopped at the damage, so claimed - recovered measures the tool's
+            # reach and not the loss, and reporting it would be a confident wrong
+            # number in place of an honest unknown.
             'pages_lost': None if fragment or claimed is None
                           else max(claimed - len(good), 0),
             'undecodable': len(found) - len(good),
@@ -1463,13 +1519,15 @@ def _print_plan(plan):
         print(f'  done        {mb(plan["size"]):>8}  reads fine now, '
               f'{plan["pages_before"]} pages  {p.name}')
     elif plan['kind'] == 'rescue':
-        fragment = plan.get('overwritten', 0) >= OVERWRITTEN_MIN
+        fragment = plan.get('fragment')
         if fragment:
-            # Not "claims N pages": the lister stopped at the zeros, so N is how
+            # Not "claims N pages": the lister stopped at the damage, so N is how
             # far it read. Saying what the file actually is leaves less room to
             # mistake a fragment for a comic.
-            claims = (f'ends in {mb(plan["overwritten"])} of NUL, '
-                      f'{plan["pages_before"]} pages readable before it')
+            damage = (f'ends in {mb(plan["overwritten"])} of NUL'
+                      if plan.get('overwritten', 0) >= OVERWRITTEN_MIN
+                      else f'{mb(plan["unreached"])} of it unreachable')
+            claims = f'{damage}, {plan["pages_before"]} pages readable before it'
         elif plan['pages_before'] is None:
             claims = 'page count unknown'
         else:

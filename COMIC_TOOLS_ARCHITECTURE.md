@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **272 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **275 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -1900,13 +1900,73 @@ numbered 014 and 015 of roughly 32, so it was missing the front of the comic as 
 back. That is worse than the broken original, which at least failed openly. It has been
 reverted. **Decision: the seven are re-downloaded, not salvaged.**
 
-Pinned by four tests in `tests/test_repack.py`, including the one that matters most — that a
+Pinned by tests in `tests/test_repack.py`, including the one that matters most — that a
 genuinely truncated file is *not* flagged, since a false positive here sends a recoverable
 comic to the re-download list.
 
 The lesson is narrower than §10.11's and worth stating separately: knowing that a tool's
 silence is not evidence does not protect you from believing its *numbers*. A partial result
 is a limit reported as a measurement, and it looks exactly like a measurement.
+
+**And then the check itself turned out to be too narrow.** The `unar`-fallback sweep
+(§10.13) walked all 20,569 RARs and turned up nine `unrar` refuses. Eight end in megabytes
+of NUL. The ninth, `Doom Patrol 04.cbr`, ends in **one** zero byte — and is a fragment
+anyway: 22.5 MB of file, of which 7z can account for 1.6 MB. The other 20.9 MB is real
+bytes no reader can reach. It would have passed the NUL check and been rescued into a
+2-page `.cbz` wearing a full issue's name, which is precisely the outcome the NUL check was
+written to prevent.
+
+`overwritten_bytes()` asked what the damage is *made of*. The question that decides the
+outcome is what share of the file the lister never reached, and zeros are only one way to
+fail it. `unreached_bytes()` reads 7z's `Tail Size`; `is_fragment()` refuses on either
+signal. The gap is as clean as the first one: the seven genuinely truncated files leave
+0%–18.6% unaccounted for, every fragment leaves 39.7% or more, so the threshold is 30%.
+Checked against all sixteen real files — zero truncated files wrongly refused, zero
+fragments wrongly allowed.
+
+Worth noticing that the narrow check was written from seven examples and was correct on all
+seven. It took a sweep of the whole library to produce the eighth shape. A discriminator
+validated only on the cases that motivated it has been fitted, not tested.
+
+### 10.13 The fallback that would have made the counter worse
+
+`list_members()` asks `unrar lb` and gives up when it exits non-zero. `unar` reads archives
+`unrar` refuses — that is the whole reason rescue mode works — so adding it as a fallback
+looks like free accuracy. The change is one line. It also re-reads a 29,515-file library, so
+it was validated before landing rather than after.
+
+The sweep (`/tmp/validate_unar_fallback.py`, read-only, ~3 h) checked both directions,
+because a fallback can fail two ways. Exhaustively: every RAR `unrar` refuses, to size the
+benefit. By sample: 400 RARs `unrar` reads happily, asking `lsar` the same question, because
+if the two tools disagree where *both* answer then the fallback does not fill blanks, it
+overwrites counts that were already fine — a far larger change than it appears.
+
+| | |
+|---|---|
+| RARs walked | 20,569 |
+| `unrar` refuses | 9 |
+| of those, `lsar` can count | 9 — 37 pages |
+| successes sampled | 400 |
+| **disagreements** | **0** |
+
+The control sample is clean, so the fallback is safe in the sense it was tested for. It was
+still rejected, on what the nine files turned out to be: **every one is a fragment**, and
+all nine are already on the re-download list. The "37 pages" is not 37 pages recovered — it
+is how far `lsar` got before hitting the damage in nine comics that hold nothing usable.
+
+So the fallback's entire measurable effect on this library would be to convert nine files
+that currently read as *unreadable* into nine files reporting small, confident, wrong page
+counts. Unreadable is the correct answer for all nine. This is §10.12's fault re-introduced
+at the counter instead of at the rescue, and it would be harder to see there, because a
+number that looks plausible does not announce itself the way a failure does.
+
+**Decision: `list_members()` is left alone.** The sweep paid for itself anyway — it is what
+found `Doom Patrol 04` and the hole in the fragment check.
+
+The general point: "it only adds data where we had none" is a claim about the mechanism, not
+about the data. Here the mechanism was sound and the change was still wrong, and no amount
+of reasoning about `unar`'s tolerance would have shown that. Only looking at the nine files
+did.
 
 ---
 

@@ -861,6 +861,48 @@ class RepackTests(unittest.TestCase):
         self.assertIsNone(out['pages_lost'])
         self.assertEqual(out['pages_after'], 3)
 
+    def _unreachable(self, name, good=3, junk=3 << 20):
+        """A readable archive with megabytes of *real* bytes welded onto the end.
+
+        The shape the NUL test missed. `Doom Patrol 04.cbr` is 22.5 MB, ends in
+        one zero byte, and 7z accounts for 1.6 MB of it; the other 20.9 MB is
+        not zeros. It read as an ordinary truncation and would have been rescued
+        into a 2-page .cbz wearing a full issue's name.
+        """
+        path = self._damaged(name, good=good, broken=0)
+        with open(path, 'ab') as f:
+            f.write(os.urandom(junk))
+        return path
+
+    def test_a_fragment_ending_in_real_bytes_is_still_a_fragment(self):
+        """The hole in the NUL check, and the reason there are now two signals.
+        Nothing about this file is zeros, so overwritten_bytes() clears it."""
+        path = self._unreachable('junked.cbz')
+
+        self.assertLess(rp.overwritten_bytes(path), rp.OVERWRITTEN_MIN)
+        self.assertTrue(rp.is_fragment(path))
+
+    def test_rescue_refuses_a_fragment_the_nul_check_would_pass(self):
+        path = self._unreachable('junked.cbr')
+        before = path.read_bytes()
+
+        with self.assertRaises(RuntimeError) as caught:
+            rp.do_rescue(path, False, self._work())
+
+        self.assertIn('fragment', str(caught.exception))
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse((self.library / 'junked.cbz').exists(),
+                         'refused, and yet something was written')
+
+    def test_a_truncated_file_is_not_called_a_fragment(self):
+        """The false positive that would matter more than the false negative:
+        every file rescued so far is this shape, and calling one a fragment
+        would refuse a comic that is all there bar its last page. The seven
+        real ones leave between 0% and 18.6% of the file unaccounted for; the
+        threshold is 30%."""
+        path = self._damaged('cut.cbz', good=3, broken=1)
+        self.assertFalse(rp.is_fragment(path))
+
     def test_the_overwritten_files_are_off_the_rescue_list(self):
         """They were on it, and one of them got rescued before the check
         existed. The bytes are what stops it now, but leaving them listed as
