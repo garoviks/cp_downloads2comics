@@ -345,3 +345,44 @@ expected result and worth stating plainly: a tolerant reader still needs a
 header to start from, and in these files byte 0 is gone. The contrast with the
 15 above is the whole point — those were damaged at the *end*, where everything
 before the cut survives.
+
+### The disk, checked rather than assumed
+
+"Bad write sessions, not a failing disk" was read off the timestamp clustering
+alone, which is an argument about shape and not a measurement. Both drives have
+since been checked directly:
+
+| | `/dev/sdc` | `/dev/sde` |
+|---|---|---|
+| SMART overall | PASSED | PASSED |
+| Reallocated sectors | 0 | 0 |
+| Current pending sectors | 0 | 0 |
+| Offline uncorrectable | 0 | 0 |
+| Raw read error rate | 0 | 0 |
+| **UDMA CRC errors** | **0** | **0** |
+| Power-on hours | 71,234 (8.1 y) | 62,710 (7.2 y) |
+
+The mirror: `Cpy%Sync 100.00`, **0 mismatches**, health column empty.
+
+The reallocation counters say the media is intact today. **`UDMA_CRC_Error_Count`
+is the one that says something about 2022** — it is lifetime-cumulative and never
+resets, so zero across eight years is positive evidence that no SATA transfer to
+either drive has ever failed its checksum. A flaky cable or controller would have
+left a mark there, and did not.
+
+So the disk is cleared, and that is as far as the evidence reaches. SMART cannot
+see the events that would actually explain ten corrupted files inside one
+52-minute window — power lost mid-write, memory, or the downloader itself. The
+finding is *not the storage*, not *here is the cause*.
+
+Two caveats worth keeping, because both are absences of evidence rather than
+evidence:
+
+* `raid_mismatch_count` is only populated by a scrub. If `lvchange --syncaction
+  check vgextra/lvextra` has never been run, the 0 above means "not measured",
+  not "no mismatches". Worth running once — it is read-only, needs no free space,
+  and takes some hours over 3.64 TB.
+* The normalised `VALUE` of 003 and 015 on power-on hours looks alarming and is
+  not: that attribute has a threshold of 000, so it cannot trip. It counts age,
+  not wear. Eight years of spinning is still eight years, and neither drive owes
+  anything to anyone.
