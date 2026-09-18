@@ -183,8 +183,11 @@ def build_report(results, root: Path, report: Path, elapsed: float):
                         and set(r['formats']) - SAFE_PAGE_FORMATS])
     nested = by_size([r for r in read if r['nested']])
 
-    flagged = {r['path'] for r in repack} | {r['path'] for r in oddpages} \
-        | {r['path'] for r in nested}
+    # oddpages is deliberately not in here. QComicBook was shown to read WebP,
+    # GIF and BMP pages perfectly well once the archive around them was a plain
+    # zip, so page format on its own is not a defect and does not make a file
+    # need work. Counting it did, and overstated the job sevenfold.
+    flagged = {r['path'] for r in repack} | {r['path'] for r in nested}
     affected = [r for r in results if r['path'] in flagged]
 
     containers = Counter(r['container'] for r in results)
@@ -200,11 +203,11 @@ def build_report(results, root: Path, report: Path, elapsed: float):
          '',
          f'Read-only sweep of `{root}` — {len(results):,} archives, '
          f'{gb(sum(r["size"] for r in results)):.1f} GB, '
-         f'{sum(r["pages"] for r in results):,} pages, '
-         f'{elapsed / 60:.0f} minutes.',
+         f'{sum(r["pages"] for r in results):,} pages'
+         + (f', {elapsed / 60:.0f} minutes.' if elapsed else '.'),
          '',
          'Every comic in the library should open in QComicBook. These are the '
-         'ones that will not, or may not. Nothing here has been changed.',
+         'ones that will not. Nothing here has been changed.',
          '',
          '## How much work is this',
          '',
@@ -212,8 +215,6 @@ def build_report(results, root: Path, report: Path, elapsed: float):
          '|---|---:|---:|---:|---|',
          f'| 7z or tar container | {len(repack)} | {gb(sum(r["size"] for r in repack)):.1f} GB '
          f'| {sum(r["pages"] for r in repack):,} | QComicBook will not open these. Repack as zip. |',
-         f'| Non-JPEG/PNG pages | {len(oddpages)} | {gb(sum(r["size"] for r in oddpages)):.1f} GB '
-         f'| {sum(r["pages"] for r in oddpages):,} | WebP especially may not render. Re-encode pages. |',
          f'| Nested archives | {len(nested)} | {gb(sum(r["size"] for r in nested)):.1f} GB '
          f'| {sum(r["pages"] for r in nested):,} | A wrapper, not a book. Unpack one level. |',
          f'| **Distinct files affected** | **{len(affected)}** '
@@ -223,6 +224,15 @@ def build_report(results, root: Path, report: Path, elapsed: float):
          f'That is {len(affected) / len(results) * 100:.2f}% of the library by count '
          f'and {sum(r["size"] for r in affected) / max(sum(r["size"] for r in results), 1) * 100:.2f}% by size.'
          if results else '',
+         '',
+         f'**Page format is not on that list, and that is a correction.** An earlier '
+         f'version of this sweep counted {len(oddpages)} files as defective for holding '
+         f'WebP, GIF or BMP pages. They are not. Once the eight 7z books were repacked '
+         f'as plain zip, QComicBook read their 443 WebP pages without complaint — the '
+         f'container was the whole problem, and the page format was never part of it. '
+         f'All {len(oddpages)} of those files are already in zip or rar containers, so '
+         f'they need nothing. They are still listed further down, as information rather '
+         f'than as work.',
          '',
          '## Container formats across the whole library',
          '',
@@ -254,9 +264,14 @@ def build_report(results, root: Path, report: Path, elapsed: float):
     L += table(repack, root, extra='Container')
 
     # ---- Class 2 -----------------------------------------------------------
-    L += ['## 2. Pages that are not JPEG or PNG',
+    L += ['## 2. Pages that are not JPEG or PNG — nothing to do',
           '',
           f'**{totals(oddpages)}**',
+          '',
+          'Listed for information. Every one of these is already in a zip or rar '
+          'container, and QComicBook renders WebP, GIF and BMP pages out of those '
+          'without complaint — proven on 443 WebP pages across three repacked books. '
+          'Re-encoding them would lose quality and fix nothing.',
           '',
           'Broken down by the format found. A file with pages in two formats is '
           'counted under each, so these rows sum to more than the file count above.',
@@ -312,9 +327,22 @@ def build_report(results, root: Path, report: Path, elapsed: float):
 
 
 def main():
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else '/mnt/extramedia/Comics')
-    report = Path(sys.argv[2] if len(sys.argv) > 2
+    argv = [a for a in sys.argv[1:] if a != '--render']
+    root = Path(argv[0] if argv else '/mnt/extramedia/Comics')
+    report = Path(argv[1] if len(argv) > 1
                   else Path(__file__).resolve().parent / 'LIBRARY_REPACK_CANDIDATES.md')
+
+    # The walk costs three hours; rendering the findings costs a second. Every
+    # result is already on disk in SCRATCH, so a wording or classification fix
+    # does not need the library read again.
+    if '--render' in sys.argv[1:]:
+        if not SCRATCH.exists():
+            print(f'No sweep results at {SCRATCH} to render.', file=sys.stderr)
+            return 1
+        results = [json.loads(l) for l in SCRATCH.open()]
+        build_report(results, root, report, 0)
+        print(f'rendered {len(results):,} results -> {report}')
+        return 0
 
     files = sorted(p for p in root.rglob('*')
                    if p.is_file() and p.suffix.lower() in ARCHIVE_EXTS)
@@ -347,4 +375,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main() or 0)

@@ -27,7 +27,9 @@ Usage:
     python3 repack_comics.py --execute FILE [FILE ...]
 """
 import argparse
+import fnmatch
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -99,6 +101,39 @@ HTML_JUNK = [
 ]
 
 JPEG_EXTS = {'.jpg', '.jpeg', '.jpe'}
+
+# What a bare --merge picks up in a folder, matching makecbz.py's default.
+MERGE_PATTERNS = ['*.cbz', '*.cbr']
+
+# Volumes merged by makecbz.py carry its extraction folders inside them. The
+# name is an unambiguous fingerprint, and it still holds the issue index, which
+# is what makes a mis-ordered volume repairable rather than merely detectable.
+TEMP_EXTRACT = 'temp_extract_'
+
+
+def natural_key(s):
+    """Sort 'Issue 2' before 'Issue 10'.
+
+    Plain string order puts 10 before 2, because '1' < '2' one character in.
+    That is the same comparison that scrambled the volumes this tool repairs —
+    getting it wrong here would rebuild them in a different wrong order.
+    """
+    return tuple(int(t) if t.isdigit() else t.lower()
+                 for t in re.split(r'(\d+)', str(s)))
+
+
+def temp_extract_index(name):
+    """The issue number out of `temp_extract_7_Some Comic 008`, or None.
+
+    makecbz.py wrote this index without zero-padding, so it sorts 0, 10, 11, 1,
+    2 — but it is still *there*, and reading it back is how the true order is
+    recovered from a volume that displays in the wrong one.
+    """
+    if not name.startswith(TEMP_EXTRACT):
+        return None
+    rest = name[len(TEMP_EXTRACT):]
+    digits = rest.split('_', 1)[0]
+    return int(digits) if digits.isdigit() else None
 
 
 # ---------------------------------------------------------------- reading
@@ -205,6 +240,19 @@ def pages_in(root):
         if p.is_file() and p.suffix.lower() in gen.PAGE_EXTS:
             found.append((p.relative_to(root), p))
     return found
+
+
+# Files that are not pages but are worth keeping. ComicInfo.xml is the series,
+# issue and creator metadata readers and Komga/Kavita index on; dropping it
+# silently loses data the user had. Thumbs.db, .DS_Store and .sfv are
+# leftovers from whoever packed the archive and are not.
+KEEP_ALONGSIDE = {'comicinfo.xml'}
+
+
+def extras_in(root):
+    """Non-page members worth carrying across, as (relative_path, absolute)."""
+    return [(p.relative_to(root), p) for p in sorted(root.rglob('*'))
+            if p.is_file() and p.name.lower() in KEEP_ALONGSIDE]
 
 
 # ---------------------------------------------------------------- writing
@@ -370,6 +418,7 @@ def do_repack(path, convert, work):
                 rel = rel.with_suffix('.jpg')
                 converted += 1
             entries.append((str(rel), abs_path))
+        entries += [(str(rel), abs_path) for rel, abs_path in extras_in(extracted)]
         # Only the extension can have changed, so the order the pages were found
         # in still holds; sorting again guards against .png and .webp of the same
         # page number landing differently.
@@ -435,13 +484,188 @@ def do_omnibus(path, convert, work):
             'final': str(final)}
 
 
+def _issue_entries(sources, convert, work, label):
+    """Pages from several comics, prefixed with a padded issue number.
+
+    The prefix is the whole design. `0007/whatever the scanner called it.jpg`
+    puts the issues in order for any reader that sorts by name, while leaving
+    the page names inside an issue exactly as they were — so a page sequence
+    that read correctly as a single issue still reads correctly in the volume.
+
+    Four digits, not one. An unpadded index is what put issue 10 before issue 2
+    in every volume this tool exists to repair.
+    """
+    entries, converted, total = [], 0, 0
+    for n, src in enumerate(sources, 1):
+        expected = gen.page_count(src)
+        if not expected:
+            raise RuntimeError(f'{Path(src).name} holds no pages')
+        unpacked = work / f'{label}_{n:04d}'
+        extract(src, unpacked)
+        found = pages_in(unpacked)
+        if len(found) != expected:
+            raise RuntimeError(f'{Path(src).name}: extracted {len(found)} pages, '
+                               f'archive reported {expected}')
+        for rel, abs_path in found:
+            if convert and abs_path.suffix.lower() not in JPEG_EXTS:
+                abs_path = to_jpeg(abs_path)
+                rel = rel.with_suffix('.jpg')
+                converted += 1
+            entries.append((f'{n:04d}/{rel}', abs_path))
+        entries += [(f'{n:04d}/{rel}', abs_path)
+                    for rel, abs_path in extras_in(unpacked)]
+        total += expected
+    return entries, converted, total
+
+
+def plan_merge(sources, output, convert):
+    ordered = sorted(sources, key=natural_key)
+    pages = []
+    for s in ordered:
+        gen._PAGE_COUNTS.clear()
+        pages.append(gen.page_count(s))
+    return {'kind': 'merge', 'path': str(output), 'format': 'merge',
+            'sources': [str(s) for s in ordered], 'source_pages': pages,
+            'pages_before': sum(p or 0 for p in pages),
+            'size': sum(Path(s).stat().st_size for s in ordered),
+            'convert': convert, 'dest': str(output)}
+
+
+def do_merge(sources, output, convert, work):
+    """Several issues into one volume. The issues are ordered by their own
+    filenames, read naturally, so 'v 2' precedes 'v 10'."""
+    ordered = sorted(sources, key=natural_key)
+    if output.exists():
+        raise FileExistsError(
+            f'Destination already occupied, refusing to overwrite: {output}')
+
+    entries, converted, total = _issue_entries(ordered, convert, work, 'issue')
+    entries.sort(key=lambda e: e[0])
+    new_file = work / 'merged.cbz'
+    write_cbz(entries, new_file)
+    verify(new_file, total)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(new_file), str(output))
+    # The sources are kept, exactly like a repacked original: a merge that read
+    # the wrong pages is only correctable while the issues still exist.
+    for s in ordered:
+        q = quarantine_path(Path(s))
+        q.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(s), str(q))
+    return {'pages_after': total, 'issues': len(ordered), 'converted': converted,
+            'new_size': output.stat().st_size, 'final': str(output)}
+
+
+def misordered_report(path):
+    """Is this volume one makecbz.py built, and did it come out in order?
+
+    Returns (issue_count, highest_index) or None. A volume is mis-ordered when
+    an index of 10 or more exists, because that is the point at which the
+    unpadded name sorts ahead of single-digit ones.
+    """
+    members = gen.list_members(path)
+    if not members:
+        return None
+    indices = set()
+    for m in members:
+        top = m.split('/')[0]
+        idx = temp_extract_index(top)
+        if idx is not None:
+            indices.add(idx)
+    if not indices:
+        return None
+    return len(indices), max(indices)
+
+
+def plan_repair(path):
+    gen._PAGE_COUNTS.clear()
+    found = misordered_report(path)
+    if found is None:
+        return {'kind': 'repair', 'path': str(path),
+                'error': 'not a makecbz.py volume — no temp_extract_ folders'}
+    issues, highest = found
+    return {'kind': 'repair', 'path': str(path), 'format': 'makecbz volume',
+            'issues': issues, 'highest_index': highest,
+            'misordered': highest >= 10,
+            'pages_before': gen.page_count(path),
+            'size': path.stat().st_size, 'convert': False,
+            'dest': str(path.with_suffix('.cbz'))}
+
+
+def do_repair(path, convert, work):
+    """Rebuild a makecbz.py volume with its issues in the right order.
+
+    Nothing was lost when it was built wrong: `temp_extract_7_...` still names
+    issue 7. Re-prefixing each page with that index, padded, puts the volume
+    back in reading order without needing the original issue files.
+    """
+    expected = gen.page_count(path)
+    final = path.with_suffix('.cbz')
+    staged = stage(path, final)
+    try:
+        extracted = work / 'in'
+        extract(staged, extracted)
+
+        found, converted = [], 0
+        for rel, abs_path in pages_in(extracted):
+            idx = temp_extract_index(rel.parts[0])
+            if idx is None:
+                # A page outside the extraction folders means this volume is
+                # not the shape we think it is. Guessing where it belongs in
+                # the reading order would be worse than refusing.
+                raise RuntimeError(f'page outside any temp_extract_ folder: {rel}')
+            inner = Path(*rel.parts[1:])
+            if convert and abs_path.suffix.lower() not in JPEG_EXTS:
+                abs_path = to_jpeg(abs_path)
+                inner = inner.with_suffix('.jpg')
+                converted += 1
+            found.append((idx, inner, abs_path))
+
+        if len(found) != expected:
+            raise RuntimeError(f'rebuilt {len(found)} pages, volume held {expected}')
+
+        # makecbz.py numbered its folders from zero, and an issue that yielded
+        # no pages leaves a gap. Renumber by rank so a repaired volume always
+        # comes out 0001..N, the same layout --merge writes.
+        issue_no = {idx: n for n, idx
+                    in enumerate(sorted({i for i, _, _ in found}), 1)}
+        entries = [(f'{issue_no[idx]:04d}/{inner}', abs_path)
+                   for idx, inner, abs_path in found]
+
+        # The per-issue ComicInfo.xml rides along with the issue it describes.
+        # One at the volume root belongs to the volume and stays at the root.
+        # Never converted — it is metadata, not a page.
+        for rel, abs_path in extras_in(extracted):
+            idx = temp_extract_index(rel.parts[0])
+            if idx is None:
+                entries.append((str(rel), abs_path))
+            elif idx in issue_no:
+                entries.append((f'{issue_no[idx]:04d}/{Path(*rel.parts[1:])}',
+                                abs_path))
+        entries.sort(key=lambda e: e[0])
+        new_file = work / 'out.cbz'
+        write_cbz(entries, new_file)
+        verify(new_file, expected)
+    except BaseException:
+        unstage(staged, path)
+        raise
+
+    _finish(staged, path, new_file, final)
+    return {'pages_after': expected, 'converted': converted,
+            'new_size': final.stat().st_size, 'final': str(final)}
+
+
 def do_junk(path):
     q = quarantine_path(path)
     if q.exists():
         raise FileExistsError(f'Destination already occupied, refusing to overwrite: {q}')
+    # Recorded before the move, because the re-download list reports how much
+    # disk the error page was occupying and the path is about to change.
+    size = path.stat().st_size
     q.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(path), str(q))
-    return {'quarantined': str(q)}
+    return {'quarantined': str(q), 'size': size}
 
 
 # ---------------------------------------------------------------- reports
@@ -465,9 +689,8 @@ def link_label(name):
 def write_report(results, convert):
     lines = ['# Repacked comics — please open each one',
              '',
-             'Every file below is now a plain stored zip with a `.cbz` name. The',
-             'links open the file itself; the point of the exercise is whether',
-             '**QComicBook** will read them, since YACReader already would.',
+             'Two different faults, fixed the same way: extract, then write a',
+             'plain stored zip. The links open the files themselves.',
              '']
     if not convert:
         lines += ['Page images were copied byte for byte. Nothing was re-encoded and',
@@ -483,16 +706,35 @@ def write_report(results, convert):
     failed = [r for r in results if r.get('status') == 'failed']
     junk = [r for r in results if r.get('status') == 'ok' and r['kind'] == 'junk']
 
-    if ok:
-        lines += [f'## {len(ok)} repacked', '',
-                  '| pages | was | size | open it |', '|---|---|---|---|']
-        for r in ok:
+    # Repairs and container fixes are not the same complaint, and one heading
+    # over both said the wrong thing about each. A repaired volume always
+    # opened; it just read in the wrong order.
+    groups = [
+        ('repair', 'read in the wrong order, now rebuilt',
+         ['These opened perfectly well already. The issues inside them were',
+          'merged in the wrong order, so they read 1, 11, 12, 2, 3 ... Every',
+          'page is byte for byte the one that was there before; only the name',
+          'it is stored under changed.']),
+        (None, 'would not open in QComicBook, now repacked',
+         ['These were 7z or tar wearing a `.cbr`/`.cbz` name, plus one zip that',
+          'held whole comics instead of pages. The container was the entire',
+          'objection — QComicBook reads the pages themselves fine.']),
+    ]
+    for kind, heading, blurb in groups:
+        rows = [r for r in ok
+                if (r['kind'] == 'repair') == (kind == 'repair')]
+        if not rows:
+            continue
+        lines += [f'## {len(rows)} {heading}', ''] + blurb + ['']
+        lines += ['| pages | was | size | open it |', '|---|---|---|---|']
+        for r in rows:
             p = Path(r['final'])
-            pages = r.get('pages_after')
             was = r['format'] + (' wrapper' if r['kind'] == 'omnibus' else '')
-            lines.append(f'| {pages} | {was} | {mb(r["new_size"])} | '
+            lines.append(f'| {r.get("pages_after")} | {was} | {mb(r["new_size"])} | '
                          f'[{link_label(p.name)}]({file_url(p)}) |')
         lines.append('')
+
+    if ok:
         lines += ['The originals are in `/mnt/extramedia/_quarantine/`, under the',
                   'same relative path they had in the library. Nothing was deleted.',
                   '']
@@ -513,7 +755,13 @@ def write_report(results, convert):
     print(f'\nreport -> {REPORT}')
 
 
-def write_redownload(names):
+def write_redownload(moved):
+    """A checklist of comics to fetch again, each with the path it belongs at.
+
+    The full path rather than the bare name: the name alone does not say which
+    series folder the replacement should land in, and several of these sit two
+    levels down.
+    """
     lines = ['# Comics to download again',
              '',
              'Each of these was saved as a `429 Too Many Requests` HTML page',
@@ -521,10 +769,24 @@ def write_redownload(names):
              'downloader wrote the refusal to disk under the comic\'s name, so',
              'the names are right even though the bytes never were.',
              '',
-             'The files have been moved to `/mnt/extramedia/_quarantine/`.',
+             'The path shown is where the file was, and where the replacement',
+             'should go. The error page itself is now at the same relative path',
+             'under `/mnt/extramedia/_quarantine/`.',
              '']
-    for n in names:
-        lines.append(f'- [ ] {n}')
+    total = 0
+    for r in sorted(moved, key=lambda r: r['path']):
+        original = Path(r['path'])
+        size = r.get('size') or 0
+        if not size and r.get('quarantined'):
+            # Runs before the size was recorded still have the file itself.
+            q = Path(r['quarantined'])
+            size = q.stat().st_size if q.exists() else 0
+        total += size
+        lines.append(f'- [ ] **{original.name}** — {mb(size)} of HTML')
+        lines.append(f'  - belongs at `{original}`')
+        if r.get('quarantined'):
+            lines.append(f'  - error page now at `{r["quarantined"]}`')
+    lines += ['', f'{len(moved)} files, {mb(total)} of disk that was never a comic.']
     REDOWNLOAD.write_text('\n'.join(lines) + '\n')
     print(f'redownload list -> {REDOWNLOAD}')
 
@@ -559,6 +821,71 @@ def load_history():
 # ---------------------------------------------------------------- driver
 
 
+MISORDERED = Path(__file__).resolve().parent / 'LIBRARY_MISORDERED.md'
+
+
+def find_misordered(root):
+    """Walk the library for volumes makecbz.py built, and say which read wrong.
+
+    Only .cbz is worth opening: makecbz.py always wrote zip, whatever the
+    sources were. Reading the member list of a zip is cheap, so this is minutes
+    rather than the hours a full archive sweep costs.
+    """
+    files = sorted(p for p in root.rglob('*.cbz') if p.is_file())
+    print(f'{len(files)} .cbz to check under {root}', flush=True)
+    hits, started = [], time.time()
+    for i, p in enumerate(files, 1):
+        try:
+            found = misordered_report(p)
+        except OSError:
+            continue
+        if found:
+            issues, highest = found
+            hits.append({'path': str(p), 'issues': issues, 'highest': highest,
+                         'misordered': highest >= 10,
+                         'size': p.stat().st_size})
+        if i % 2000 == 0:
+            rate = i / (time.time() - started)
+            print(f'  {i}/{len(files)}  {rate:.0f}/s  '
+                  f'eta {(len(files) - i) / rate / 60:.0f}m  hits={len(hits)}',
+                  flush=True)
+    return hits
+
+
+def write_misordered(hits, root):
+    bad = sorted((h for h in hits if h['misordered']), key=lambda h: -h['issues'])
+    ok = [h for h in hits if not h['misordered']]
+    lines = ['# Volumes merged in the wrong page order',
+             '',
+             'Every volume below was built by `makecbz.py`, which is detectable',
+             'because it leaves its `temp_extract_` folders inside the archive.',
+             '',
+             'It numbered those folders without zero-padding, so `temp_extract_10_`',
+             'sorts *before* `temp_extract_1_` — `0` is 48 and `_` is 95. A volume',
+             'is therefore fine up to ten issues and scrambled from eleven, which',
+             'is why this went unnoticed for so long.',
+             '',
+             'Nothing was lost. The folder name still carries the issue number, so',
+             'the reading order can be rebuilt from inside the volume itself —',
+             'the original issue files are not needed.',
+             '']
+    if bad:
+        lines += [f'## {len(bad)} read in the wrong order', '',
+                  '| issues | pages out of order | file |', '|---|---|---|']
+        for h in bad:
+            n = h['issues']
+            # 1, then 11..n, then 2, 3 ... — everything from 2 up is displaced.
+            lines.append(f'| {n} | issues 2–{n} | `{Path(h["path"]).relative_to(root)}` |')
+        lines += ['', 'Repair them with:', '',
+                  '```', 'python3 repack_comics.py --repair --execute FILE...', '```', '']
+    if ok:
+        lines += [f'## {len(ok)} built by the same tool but still in order', '',
+                  'Ten issues or fewer, so the unpadded index never overtook itself.',
+                  'They carry the `temp_extract_` folders but read correctly.', '']
+    MISORDERED.write_text('\n'.join(lines) + '\n')
+    print(f'\n{len(bad)} mis-ordered, {len(ok)} fine -> {MISORDERED}')
+
+
 def free_gb(path):
     st = shutil.disk_usage(path)
     return st.free / 1e9
@@ -577,7 +904,62 @@ def main():
                     help='restrict to files whose path contains SUBSTR')
     ap.add_argument('--skip-junk', action='store_true',
                     help='leave the 429 HTML files alone')
+    ap.add_argument('--rebuild-reports', action='store_true',
+                    help='re-render both markdown reports from the run history '
+                         'and exit, touching no comic')
+    ap.add_argument('--merge', nargs='?', const='', metavar='OUTPUT.cbz',
+                    help='merge the given issues into one volume; with no name, '
+                         'every comic in --dir, named after that folder')
+    ap.add_argument('--pattern', metavar='GLOB',
+                    help='with --merge, which files in --dir to take; quoted, '
+                         'and expanded here rather than by the shell '
+                         f'(default: {MERGE_PATTERNS})')
+    ap.add_argument('--dir', default='.', metavar='DIR',
+                    help='with --merge and --pattern, where to look (default: .)')
+    ap.add_argument('--repair', action='store_true',
+                    help='rebuild makecbz.py volumes in the right issue order')
+    ap.add_argument('--find-misordered', nargs='?', const=str(LIBRARY),
+                    metavar='ROOT',
+                    help='scan for volumes that read in the wrong order and exit')
     args = ap.parse_args()
+
+    if args.find_misordered:
+        root = Path(args.find_misordered)
+        write_misordered(find_misordered(root), root)
+        return 0
+
+    if args.rebuild_reports:
+        history = load_history()
+        if not history:
+            print(f'No history at {REPACK_HISTORY}; nothing to render.')
+            return 1
+        write_report(history, args.convert_nonjpeg)
+        moved = [r for r in history if r['kind'] == 'junk' and r['status'] == 'ok']
+        if moved:
+            write_redownload(moved)
+        return 0
+
+    if args.merge is not None:
+        # The pattern arrives as a string and is expanded here. A shell that
+        # expanded it first would hand over a list this script cannot tell from
+        # explicitly chosen files, and an unquoted pattern matching nothing
+        # would arrive as the literal pattern.
+        where = Path(args.dir).resolve()
+        patterns = [args.pattern] if args.pattern else MERGE_PATTERNS
+        if args.files and not args.pattern:
+            sources = [Path(f) for f in args.files]
+        else:
+            sources = [p for p in sorted(where.iterdir()) if p.is_file()
+                       and any(fnmatch.fnmatch(p.name, g) for g in patterns)]
+        # Named after the folder, the way makecbz.py did it, so the common
+        # case is `--merge` on its own inside a series directory.
+        output = Path(args.merge) if args.merge else where / f'{where.name}.cbz'
+        sources = [p for p in sources if p.resolve() != output.resolve()]
+        if not sources:
+            print(f'No issues to merge in {where} '
+                  f'matching {" ".join(patterns)}.')
+            return 1
+        return run_merge(sources, output, args)
 
     if args.files:
         targets = [Path(f) for f in args.files]
@@ -611,10 +993,15 @@ def main():
     plans = []
     for p in targets:
         try:
-            plan = (plan_omnibus(p) if _is_wrapper(p)
-                    else plan_repack(p, args.convert_nonjpeg))
+            if args.repair:
+                plan = plan_repair(p)
+            elif _is_wrapper(p):
+                plan = plan_omnibus(p)
+            else:
+                plan = plan_repack(p, args.convert_nonjpeg)
         except Exception as e:
-            plan = {'kind': 'repack', 'path': str(p), 'error': str(e)}
+            plan = {'kind': 'repair' if args.repair else 'repack',
+                    'path': str(p), 'error': str(e)}
         plans.append(plan)
         _print_plan(plan)
     for p in junk:
@@ -656,9 +1043,9 @@ def main():
         try:
             with tempfile.TemporaryDirectory(dir=TEMP_ROOT, prefix='repack_') as tmp:
                 work = Path(tmp)
-                out = (do_omnibus(p, args.convert_nonjpeg, work)
-                       if plan['kind'] == 'omnibus'
-                       else do_repack(p, args.convert_nonjpeg, work))
+                op = {'omnibus': do_omnibus, 'repair': do_repair}.get(
+                    plan['kind'], do_repack)
+                out = op(p, args.convert_nonjpeg, work)
             results.append({**plan, **out, 'status': 'ok'})
             print(f' {out["pages_after"]} pages, {mb(out["new_size"])}'
                   + (f', {out["converted"]} converted' if out['converted'] else ''))
@@ -684,8 +1071,48 @@ def main():
     write_report(history, args.convert_nonjpeg)
     moved = [r for r in history if r['kind'] == 'junk' and r['status'] == 'ok']
     if moved:
-        write_redownload(sorted(Path(r['path']).stem for r in moved))
+        write_redownload(moved)
     return 1 if bad else 0
+
+
+def run_merge(sources, output, args):
+    """Several issues into one volume — the makecbz.py job, done safely."""
+    missing = [p for p in sources if not p.exists()]
+    if missing:
+        for p in missing:
+            print(f'  not found: {p}')
+        return 1
+
+    plan = plan_merge(sources, output, args.convert_nonjpeg)
+    print(f'{len(sources)} issues -> {output}')
+    print(f'{"EXECUTING" if args.execute else "DRY RUN — nothing will be written"}')
+    print()
+    for n, (s, pages) in enumerate(zip(plan['sources'], plan['source_pages']), 1):
+        print(f'  {n:04d}/  {str(pages):>4} pages  {Path(s).name}')
+    print(f'\n  {plan["pages_before"]} pages in total, {mb(plan["size"])}')
+    if any(p is None for p in plan['source_pages']):
+        print('\n  One of these could not be read. Refusing to merge a volume '
+              'that would silently be missing an issue.')
+        return 1
+    print()
+
+    if not args.execute:
+        print('Dry run complete. Re-run with --execute to carry this out.')
+        return 0
+
+    QUARANTINE.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(dir=TEMP_ROOT, prefix='merge_') as tmp:
+            out = do_merge(sources, output, args.convert_nonjpeg, Path(tmp))
+    except Exception as e:
+        print(f'FAILED: {e}')
+        return 1
+    print(f'{out["pages_after"]} pages from {out["issues"]} issues, '
+          f'{mb(out["new_size"])} -> {output}')
+    print(f'The issues are in {QUARANTINE}, not deleted.')
+    save_log([{**plan, **out, 'status': 'ok'}])
+    write_report(load_history(), args.convert_nonjpeg)
+    return 0
 
 
 def _is_wrapper(path):
@@ -699,7 +1126,12 @@ def _print_plan(plan):
     if 'error' in plan:
         print(f'  ERROR       {p.name}: {plan["error"]}')
         return
-    if plan['kind'] == 'omnibus':
+    if plan['kind'] == 'repair':
+        state = ('reads WRONG from issue 2' if plan['misordered']
+                 else 'reads correctly, 10 issues or fewer')
+        print(f'  repair      {mb(plan["size"]):>8}  {plan["issues"]} issues, '
+              f'{plan["pages_before"]} pages — {state}  {p.name}')
+    elif plan['kind'] == 'omnibus':
         print(f'  omnibus     {mb(plan["size"]):>8}  {plan["format"]} holding '
               f'{len(plan["inner"])} comics  {p.name}')
         for m in plan['inner']:

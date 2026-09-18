@@ -6,53 +6,43 @@ Two rounds of false alarms have been removed from this list, both caused by the
 same mistake — a format the counter could not name read as a file holding no
 pages, which accuses a good comic instead of admitting ignorance. First the
 `.jpe` page extension (159 KissManga files), then the 7z, tar and ACE
-containers below. Counts here are from the fixed counter.
+containers. Counts here are from the fixed counter.
 
-## 8 were never broken — 7z and tar wearing a .cbr or .cbz name
+Since the first version of this report, 23 of the 66 files listed have left it:
+nine were repacked and are now readable, fourteen were error pages and have
+been moved out of the library. The two sections below are what is left.
 
-These are ordinary comics. The old counter knew only zip and rar, so it called
-them junk. Nothing needs doing to them; they are listed so the earlier report
-is not believed.
+## 9 were never broken, and have been repacked — see `LIBRARY_REPACK_REPORT.md`
 
-| pages | format | size | file |
-|---|---|---|---|
-| 234 | 7z | 313 MB | `The Living Corpse Omnibus Vol. 1 (2007).cbr` |
-| 168 | 7z | 60 MB | `The Winter Men (2005) [RC HQ-Scan 576p] ComixLedger.cbz` |
-| 161 | 7z | 199 MB | `3 Guns (2013) TPB.cbr` |
-| 138 | 7z | 49 MB | `The Programme (2007) Vol. 1-2 (RC) ComixLedger/The Programme (2007) Vol. 1 [RC HQ-Scan 720p] ComixLedger.cbz` |
-| 137 | 7z | 48 MB | `The Programme (2007) Vol. 1-2 (RC) ComixLedger/The Programme (2007) Vol. 2 [RC HQ-Scan 720p] ComixLedger.cbz` |
-| 50 | 7z | 96 MB | `Alix Senator  (2012-2020)/Alix Senator v08 - The City of Poisons (2018) (Scanlation) (phillywilly).cbr` |
-| 42 | tar | 76 MB | `Firefly/Firefly 20th Anniversary Special 001.cbr` |
-| 20 | 7z | 13 MB | `Tales from Myth - The Fallen Lords.cbz` |
+Eight were ordinary comics in the wrong container (7z or tar wearing a `.cbr`
+or `.cbz` name); the ninth, `Patience! Conviction! Revenge!`, was a zip holding
+five RAR issues rather than pages. The old counter knew only zip and rar, so it
+called all nine junk.
 
-## 44 hold no pages
+They now exist as plain stored zips that QComicBook opens — confirmed by the
+user on all nine. No page was re-encoded, including the 443 WebP pages: the
+container was the entire objection, not the image format. The originals are in
+`/mnt/extramedia/_quarantine/`.
+
+## 14 were `429 Too Many Requests` HTML — see `LIBRARY_REDOWNLOAD.md`
+
+1651 MB of error pages carrying comic filenames. Moved to
+`/mnt/extramedia/_quarantine/`; the names are accurate, so the list doubles as
+the re-download list.
+
+## 29 hold no pages
 
 Opened, or proved not to be an archive at all, and there is no image inside.
 
 | size | why | file |
 |---|---|---|
-| 392 MB | not an archive in any format we read | `Americatown (2016) (digital) (d'argh-Empire).cbr` |
-| 311 MB | not an archive in any format we read | `Star Trek/Star Trek - Strange New Worlds - The Seeds of Salvation (2026) (digital) (The Magicians-Empire).cbr` |
-| 307 MB | zip archive opens, holds no images | `Patience! Conviction! Revenge! (2018) /Patience! Conviction! Revenge! (2018) .cbz` |
-| 262 MB | not an archive in any format we read | `Planet Atmos - Exordium/Planet Atmos - Exordium v01 (2026) (digital) (Knight Ripper-Empire).cbr` |
+| 392 MB | unrecognisable data from byte 0 — no archive signature anywhere | `Americatown (2016) (digital) (d'argh-Empire).cbr` |
 | 210 MB | first 51 MB is NUL, 158 MB of data survives after it | `Jungle.../Jungle Fantasy - Survivors (001-010)(2017-2018)(digital)(600dpi)(Minutemen-Excelsior)/Jungle Fantasy - Survivors 007 (2017) (digital) (600dpi) (Minutemen-Excelsior).cbz` |
-| 198 MB | not an archive in any format we read | `Dwellings (2023)/Dwellings - All Hallows' Eve Special 01 (2024) (Digital Rip) (Hourman-DCP).cbr` |
 | 195 MB | first 9 MB is NUL, 187 MB of data survives after it | `Jungle.../Jungle Fantasy - Survivors (001-010)(2017-2018)(digital)(600dpi)(Minutemen-Excelsior)/Jungle Fantasy - Survivors 002 (2017) (digital) (600dpi) (Minutemen-Excelsior).cbz` |
 | 177 MB | first 149 MB is NUL, 28 MB of data survives after it | `Jungle.../Jungle Fantasy - Survivors (001-010)(2017-2018)(digital)(600dpi)(Minutemen-Excelsior)/Jungle Fantasy - Survivors 004 (2017) (digital) (600dpi) (Minutemen-Excelsior).cbz` |
-| 135 MB | not an archive in any format we read | `Frankenstein - New World - The Speed of Darkness/Frankenstein - New World - The Speed of Darkness 004 (2026) (digital) (Son of Ultron-Empire).cbr` |
-| 123 MB | not an archive in any format we read | `Ripcord/Ripcord 004 (2026) (Digital) (DR & Quinch-Empire).cbr` |
-| 115 MB | not an archive in any format we read | `Marvel Noir (2009-2011)(digital)/X-Men Noir (2009) (Digital) (Kileko-Empire).cbr` |
+| 115 MB | unrecognisable data from byte 0 — no archive signature anywhere | `Marvel Noir (2009-2011)(digital)/X-Men Noir (2009) (Digital) (Kileko-Empire).cbr` |
 | 109 MB | zip archive opens, holds no images | `Luis Royo/Luis Royo - Subversive Beauty & Portfolio.cbr` |
-| 103 MB | not an archive in any format we read | `Beautiful Killer (2002) (Fan-Made TPB).cbr` |
-| 101 MB | not an archive in any format we read | `Murder Podcast/Murder Podcast 007 (2026) (Digital) (DR & Quinch-Empire).cbr` |
-| 80 MB | not an archive in any format we read | `All Night & Every Day (2022) (digital) (Son of Ultron-Empire).cbr` |
-| 71 MB | not an archive in any format we read | `Murder Drones/Murder Drones 05 (of 06) (2026) (Digital Rip) (Hourman-DCP).cbr` |
-| 70 MB | not an archive in any format we read | `Honor and Curse Eternal/Honor and Curse Eternal 004 (2026) (2 covers) (digital) (Knight Ripper-Empire).cbr` |
-| 68 MB | not an archive in any format we read | `Hello Darkness (2024)/Hello Darkness 022 (2026) (Digital Rip) (Hourman-DCP).cbr` |
-| 59 MB | not an archive in any format we read | `A Quiet Place - Storm Warning/A Quiet Place - Storm Warning 004 (2026) (digital) (Son of Ultron-Empire).cbr` |
-| 42 MB | not an archive in any format we read | `White Sky/White Sky 005 (2026) (Digital) (Mephisto-Empire).cbr` |
-| 31 MB | not an archive in any format we read | `James Bond (2016)/James Bond - 007 005 (2022) (4 covers) (digital) (Son of Ultron-Empire).cbr` |
-| 28 MB | not an archive in any format we read | `Red Roots/Red Roots 004 (2026) (Digital) (Mephisto-Empire).cbr` |
+| 31 MB | unrecognisable data from byte 0 — no archive signature anywhere | `James Bond (2016)/James Bond - 007 005 (2022) (4 covers) (digital) (Son of Ultron-Empire).cbr` |
 | 26 MB | first 11 MB is NUL, 14 MB of data survives after it | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 002 (2009) (four covers) (Minutemen-DTs).cbz` |
 | 24 MB | first 15 MB is NUL, 9 MB of data survives after it | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 003 (2009) (three covers) (fixed) (Minutemen-DTs).cbz` |
 | 24 MB | first 4 MB is NUL, 20 MB of data survives after it | `Warren Ellis/1995/Marvel  2099/X men 2099/X men 2099 #24.cbr` |
@@ -108,7 +98,15 @@ what is inside them. A truncated download looks like this.
 
 ---
 
-**5.6 GB** across 66 files that are actually broken.
+**3.7 GB** across 51 files that are actually broken — down from 5.6 GB and 66.
+
+### On the three files that are data all the way through
+
+`Americatown`, `X-Men Noir` and `James Bond - 007 005` are not truncated and
+not NUL-padded. Searching the first 64 MB and the last 4 KB of each turns up no
+zip, rar or 7z signature at any offset, and the bytes look random from position
+zero. There is nothing to carve out; re-download is the only fix. They are a
+different failure from the NUL group below, which still holds real data.
 
 ### On the NUL damage
 

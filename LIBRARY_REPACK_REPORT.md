@@ -1,14 +1,38 @@
 # Repacked comics — please open each one
 
-Every file below is now a plain stored zip with a `.cbz` name. The
-links open the file itself; the point of the exercise is whether
-**QComicBook** will read them, since YACReader already would.
+Two different faults, fixed the same way: extract, then write a
+plain stored zip. The links open the files themselves.
 
 Page images were copied byte for byte. Nothing was re-encoded and
 no quality was lost — including the WebP books, which QComicBook
 turned out to be perfectly happy with once they were out of 7z.
 
-## 9 repacked
+## 11 read in the wrong order, now rebuilt
+
+These opened perfectly well already. The issues inside them were
+merged in the wrong order, so they read 1, 11, 12, 2, 3 ... Every
+page is byte for byte the one that was there before; only the name
+it is stored under changed.
+
+| pages | was | size | open it |
+|---|---|---|---|
+| 1474 | makecbz volume | 2110 MB | [Sorcery 101 (2015).cbz](file:///mnt/extramedia/Comics/Sorcery%20101%20%28001-049%29%282014-2017%29%28digital-Empire%29/Sorcery%20101%20%282015%29.cbz) |
+| 1330 | makecbz volume | 2184 MB | [Scarlet Traces - Empire of Blood (2025).cbz](file:///mnt/extramedia/Comics/Scarlet%20Traces/Scarlet%20Traces%20-%20Empire%20of%20Blood%20%282025%29/Scarlet%20Traces%20-%20Empire%20of%20Blood%20%282025%29.cbz) |
+| 473 | makecbz volume | 635 MB | [Criminal 001-012 (2019-2020).cbz](file:///mnt/extramedia/Comics/Criminal/Criminal%20001-012%20%282019-2020%29.cbz) |
+| 428 | makecbz volume | 170 MB | [A Distant Soil v01.cbz](file:///mnt/extramedia/Comics/A%20Distant%20Soil/3.%20A%20Distant%20Soil%201-%2014%20%5B1991%20-%201994%5D%20Aria%20Press/A%20Distant%20Soil%20v01.cbz) |
+| 409 | makecbz volume | 585 MB | [Die!Die!Die!.cbz](file:///mnt/extramedia/Comics/Die%21Die%21Die%21/Die%21Die%21Die%21.cbz) |
+| 399 | makecbz volume | 268 MB | [Insufferable v2 (01-32) (2013).cbz](file:///mnt/extramedia/Comics/Insufferable/Insufferable%20v2%20%2801-32%29%20%282013%29/Insufferable%20v2%20%2801-32%29%20%282013%29.cbz) |
+| 377 | makecbz volume | 180 MB | [Love and Capes.cbz](file:///mnt/extramedia/Comics/Love%20and%20Capes/Love%20and%20Capes.cbz) |
+| 351 | makecbz volume | 488 MB | [Ghosted in L.A. (2020).cbz](file:///mnt/extramedia/Comics/Ghosted%20in%20L.A.%20%282020%29/Ghosted%20in%20L.A.%20%282020%29.cbz) |
+| 332 | makecbz volume | 1146 MB | [Igor Grom (2018).cbz](file:///mnt/extramedia/Comics/Igor%20Grom%20%282018%29/Igor%20Grom%20%282018%29.cbz) |
+| 305 | makecbz volume | 463 MB | [Ignited 001-008 (2019-2020).cbz](file:///mnt/extramedia/Comics/Ignited%20001-008%20%282019-2020%29/Ignited%20001-008%20%282019-2020%29.cbz) |
+| 222 | makecbz volume | 128 MB | [Insufferable v3 (01-18) (2014-2015).cbz](file:///mnt/extramedia/Comics/Insufferable/Insufferable%20v3%20%2801-18%29%20%282014-2015%29/Insufferable%20v3%20%2801-18%29%20%282014-2015%29.cbz) |
+
+## 9 would not open in QComicBook, now repacked
+
+These were 7z or tar wearing a `.cbr`/`.cbz` name, plus one zip that
+held whole comics instead of pages. The container was the entire
+objection — QComicBook reads the pages themselves fine.
 
 | pages | was | size | open it |
 |---|---|---|---|

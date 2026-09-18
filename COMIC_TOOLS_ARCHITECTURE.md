@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **211 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **253 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -1752,11 +1752,55 @@ after it — 63% to 99.99% NUL, the survivor in one case being 187 MB. The archi
 at byte 0, so they are unreadable regardless, but "all zero bytes" was not true of a single
 one of them.
 
-That leaves 66 genuinely broken files, 5.6 GB: 44 holding no pages (17 with no archive
-signature at all, 19 with NUL damage, 4 empty, 4 that open and contain no images — including
-one `.cbr` of `.exe` and `.bat`) and 22 that cannot be read (20 damaged archives, 2 ACE).
-Listed in `LIBRARY_BROKEN_FILES.md`. None of this was visible to any other part of the
-pipeline — every one of these files has a plausible name and a plausible size.
+That left 66 genuinely broken files, 5.6 GB. Twenty-three have since left that list — nine
+repacked and readable, fourteen quarantined as error pages — leaving **51 files, 3.7 GB** in
+`LIBRARY_BROKEN_FILES.md`. None of this was visible to any other part of the pipeline: every
+one of these files has a plausible name and a plausible size.
+
+### 10.10 Two faults that both read as "broken", and are not the same fault
+
+`repack_comics.py` exists because unrelated problems were filed under one label.
+
+**The container.** Eight comics were 7z or tar wearing a `.cbr`/`.cbz` name, and one `.cbz`
+held five whole RAR comics instead of pages. Extracted and rewritten as `ZIP_STORED`, all
+nine open in QComicBook — confirmed by the user. **No page was re-encoded**, including 443
+WebP pages. The working theory going in was that QComicBook objected to WebP; it did not.
+The container was the entire objection, and the conversion path (`--convert-nonjpeg`, JPEG
+q95 4:4:4) was built, kept, and never used.
+
+**The order.** `makecbz.py` merged loose issues into volumes, and had two independent
+ordering defects, both reproduced empirically rather than reasoned about:
+
+* `temp_extract_{i}_` was not zero-padded. `'0'` is 48 and `'_'` is 95, so `temp_extract_10_`
+  sorts *before* `temp_extract_1_`. A volume is fine to ten issues and scrambled from
+  **eleven** — not ten, which was the first guess and was wrong.
+* `zip -r out.zip .` stores entries in filesystem readdir order. Measured on twelve issues:
+  stored as 7, 11, 8, 3, 1, 9, 10, 6, 2, 4, 12, 5. Latent, because most readers re-sort by
+  name — which is exactly what made the first defect visible and this one invisible.
+
+`temp_extract_` inside a `.cbz` is an unambiguous fingerprint of the tool, and the folder name
+still carries the issue index, so **reading order is rebuildable from inside the volume**
+without the original issue files. Of 8,439 `.cbz` scanned, 143 were built by `makecbz.py` and
+11 had eleven or more issues. All 11 repaired; every page verified byte-identical to the
+quarantined original, stored order equal to sorted order.
+
+Both defects are now fixed in `makecbz.py` itself (padded index, `zip -@` fed a sorted list),
+so either tool produces correct volumes.
+
+**One thing was lost.** The repair pass dropped 74 per-issue `ComicInfo.xml` files:
+`pages_in()` kept images and nothing else. The tool now carries `ComicInfo.xml` through
+(`extras_in()`, never re-encoded even under `--convert-nonjpeg`) while still dropping
+`Thumbs.db`, `.DS_Store` and `.sfv`. The user's call on the 11 already done was to leave them:
+these were *nested* metadata inside merged volumes, which QComicBook ignores entirely and
+Komga/Kavita only read at the archive root, so they were already inert. The originals remain
+in quarantine.
+
+**A test wrote into production.** `setUp` patched `LIBRARY`, `QUARANTINE`, `STAGING` and
+`TEMP_ROOT` but not `LOG_DIR`, so the first test to go through `main()` appended two `/tmp`
+fixtures to the repo's real run history — and the next report rendered them as real comics.
+All six log and report paths are now patched, and
+`test_a_test_run_never_touches_the_real_run_history` asserts it directly rather than trusting
+the fixture list to stay complete.
 
 One of those five mutations survived its first run and is the reason the signature check is
 tested the way it is. Removing the check changed no result, because this `unrar` build happens to return

@@ -73,11 +73,23 @@ class RepackTests(unittest.TestCase):
         self.library.mkdir()
         # The real paths point at a 3.6 TB library. Everything below has to
         # happen inside the temp dir or the test is not a test.
+        #
+        # The log and report paths matter as much as the library ones: any test
+        # that goes through main() calls save_log(), and an unpatched LOG_DIR
+        # writes a /tmp fixture into the repo's real run history, which then
+        # shows up as a row in the report. That happened once.
+        logs = self.tmp / 'logs'
         self.patches = [
             mock.patch.object(rp, 'LIBRARY', self.library),
             mock.patch.object(rp, 'QUARANTINE', self.quarantine),
             mock.patch.object(rp, 'STAGING', self.staging),
             mock.patch.object(rp, 'TEMP_ROOT', self.tmp),
+            mock.patch.object(rp, 'LOG_DIR', logs),
+            mock.patch.object(rp, 'REPACK_LOG', logs / 'last_repack.json'),
+            mock.patch.object(rp, 'REPACK_HISTORY', logs / 'repacks.jsonl'),
+            mock.patch.object(rp, 'REPORT', self.tmp / 'report.md'),
+            mock.patch.object(rp, 'REDOWNLOAD', self.tmp / 'redownload.md'),
+            mock.patch.object(rp, 'MISORDERED', self.tmp / 'misordered.md'),
         ]
         for p in self.patches:
             p.start()
@@ -377,6 +389,269 @@ class RepackTests(unittest.TestCase):
         self.assertTrue(rp._is_wrapper(wrapper))
         self.assertFalse(rp._is_wrapper(plain))
 
+    # ------------------------------------------------ merging issues
+
+    def _issue(self, name, pages, issue, ext='.jpg'):
+        """One issue as a .cbz, pages named the way a scanner would."""
+        src = self.tmp / f'mk_{issue}'
+        shutil.rmtree(src, ignore_errors=True)
+        make_pages(src, pages, ext, issue=issue)
+        out = self.library / name
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(out, 'w', zipfile.ZIP_STORED) as z:
+            for f in sorted(src.iterdir()):
+                z.write(f, arcname=f.name)
+        return out
+
+    def test_merge_orders_issue_2_before_issue_10(self):
+        """The bug this replaces, stated as a test.
+
+        makecbz.py numbered its folders without padding, so `temp_extract_10_`
+        sorted ahead of `temp_extract_1_` and every volume of eleven or more
+        issues read 1, 11, 12, 2, 3. Unpadded issue *filenames* are the same
+        trap one level up, which is why the sources are sorted naturally.
+        """
+        sources = [self._issue(f'Series {i}.cbz', 2, issue=i)
+                   for i in range(1, 13)]
+        out = self.library / 'Series v01.cbz'
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rp.do_merge(sources, out, convert=False, work=Path(tmp))
+
+        with zipfile.ZipFile(out) as z:
+            names = sorted(z.namelist())
+            pages = [z.read(n) for n in names]
+
+        self.assertEqual(len(names), 24)
+        self.assertEqual([n.split('/')[0] for n in names],
+                         [f'{i:04d}' for i in range(1, 13) for _ in range(2)])
+        expected = [jpeg_bytes(page_colour(p, i))
+                    for i in range(1, 13) for p in (1, 2)]
+        self.assertEqual(pages, expected, 'issues are not in reading order')
+
+    def test_merge_keeps_the_page_names_inside_an_issue(self):
+        """Only the prefix is added. A page sequence that read correctly as a
+        single issue still reads correctly inside the volume."""
+        sources = [self._issue('One.cbz', 3, issue=1)]
+        out = self.library / 'vol.cbz'
+        with tempfile.TemporaryDirectory() as tmp:
+            rp.do_merge(sources, out, convert=False, work=Path(tmp))
+        with zipfile.ZipFile(out) as z:
+            self.assertEqual(sorted(z.namelist()),
+                             ['0001/001.jpg', '0001/002.jpg', '0001/003.jpg'])
+
+    def test_merge_keeps_the_issues(self):
+        """makecbz.py called os.remove on them. A merge that read the wrong
+        pages is only correctable while the issues still exist."""
+        sources = [self._issue('Keep 1.cbz', 2, issue=1),
+                   self._issue('Keep 2.cbz', 2, issue=2)]
+        with tempfile.TemporaryDirectory() as tmp:
+            rp.do_merge(sources, self.library / 'kept.cbz', False, Path(tmp))
+        for s in sources:
+            self.assertFalse(s.exists())
+            self.assertTrue((self.quarantine / s.name).exists(), s.name)
+
+    def test_merge_refuses_to_overwrite(self):
+        sources = [self._issue('A 1.cbz', 2, issue=1)]
+        out = self.library / 'taken.cbz'
+        out.write_bytes(b'already here')
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(FileExistsError):
+                rp.do_merge(sources, out, False, Path(tmp))
+        self.assertEqual(out.read_bytes(), b'already here')
+
+    def test_bare_merge_takes_the_whole_folder_and_names_it_after_it(self):
+        """How makecbz.py was actually run: from inside a series folder with
+        no arguments. The replacement has to answer to the same gesture."""
+        folder = self.library / 'Some Series (2019)'
+        folder.mkdir(parents=True)
+        for n in (1, 2, 10):
+            self._issue(f'Some Series (2019)/Some Series {n:03d}.cbz', 2, issue=n)
+        (folder / 'notes.txt').write_text('not a comic')
+
+        with mock.patch.object(sys, 'argv', ['repack_comics.py', '--merge',
+                                             '--dir', str(folder), '--execute']):
+            self.assertEqual(rp.main(), 0)
+
+        out = folder / 'Some Series (2019).cbz'
+        self.assertTrue(out.exists(), 'volume not named after its folder')
+        with zipfile.ZipFile(out) as z:
+            names = sorted(z.namelist())
+        self.assertEqual([n.split('/')[0] for n in names],
+                         ['0001', '0001', '0002', '0002', '0003', '0003'])
+        self.assertEqual(len(names), 6, 'notes.txt should not have been swept in')
+
+    def test_a_test_run_never_touches_the_real_run_history(self):
+        """Guards the harness, not the tool. Every path the script writes to
+        has to be redirected into the temp dir, or a test leaves a fixture in
+        the repo's history and the next report renders it as a real comic."""
+        real = Path(rp.__file__).resolve().parent
+        for name in ('LOG_DIR', 'REPACK_LOG', 'REPACK_HISTORY',
+                     'REPORT', 'REDOWNLOAD', 'MISORDERED'):
+            value = Path(getattr(rp, name))
+            self.assertFalse(value.is_relative_to(real),
+                             f'{name} still points into the repo: {value}')
+            self.assertTrue(value.is_relative_to(self.tmp), name)
+
+    def test_bare_merge_does_not_eat_its_own_output(self):
+        """Re-running in a folder that already holds the volume must not fold
+        the volume back into itself."""
+        folder = self.library / 'Twice (2020)'
+        folder.mkdir(parents=True)
+        self._issue('Twice (2020)/Twice 001.cbz', 2, issue=1)
+        volume = folder / 'Twice (2020).cbz'
+        volume.write_bytes(b'the volume from last time')
+
+        with mock.patch.object(sys, 'argv', ['repack_comics.py', '--merge',
+                                             '--dir', str(folder), '--execute']):
+            rc = rp.main()
+
+        self.assertEqual(rc, 1, 'should refuse rather than overwrite')
+        self.assertEqual(volume.read_bytes(), b'the volume from last time')
+
+    def test_bare_merge_on_an_empty_folder_says_so_and_writes_nothing(self):
+        folder = self.library / 'Nothing Here'
+        folder.mkdir(parents=True)
+        with mock.patch.object(sys, 'argv', ['repack_comics.py', '--merge',
+                                             '--dir', str(folder), '--execute']):
+            self.assertEqual(rp.main(), 1)
+        self.assertEqual(list(folder.iterdir()), [])
+
+    def test_natural_key_puts_2_before_10(self):
+        names = ['Issue 10.cbz', 'Issue 2.cbz', 'Issue 1.cbz']
+        self.assertEqual(sorted(names, key=rp.natural_key),
+                         ['Issue 1.cbz', 'Issue 2.cbz', 'Issue 10.cbz'])
+        self.assertEqual(sorted(names),
+                         ['Issue 1.cbz', 'Issue 10.cbz', 'Issue 2.cbz'])
+
+    # ------------------------------------------------ repairing old volumes
+
+    def _makecbz_volume(self, name, issue_pages):
+        """A volume shaped exactly as makecbz.py left it: pages under unpadded
+        `temp_extract_{i}_{stem}` folders, stored in scrambled order."""
+        entries = []
+        for i, count in enumerate(issue_pages):
+            folder = f'temp_extract_{i}_Series {i + 1:03d}'
+            for p in range(1, count + 1):
+                entries.append((f'{folder}/{p:03d}.jpg',
+                                jpeg_bytes(page_colour(p, i + 1))))
+        out = self.library / name
+        # zip -r stored these in readdir order, which is arbitrary. Reversing
+        # is a stand-in for arbitrary and proves the repair does not lean on it.
+        with zipfile.ZipFile(out, 'w', zipfile.ZIP_STORED) as z:
+            for n, data in reversed(entries):
+                z.writestr(n, data)
+        return out
+
+    def test_a_makecbz_volume_is_recognised_and_its_order_judged(self):
+        fine = self._makecbz_volume('small.cbz', [2] * 9)
+        broken = self._makecbz_volume('big.cbz', [2] * 12)
+        self.assertEqual(rp.misordered_report(fine), (9, 8))
+        self.assertEqual(rp.misordered_report(broken), (12, 11))
+        self.assertIsNone(rp.misordered_report(self._seven_zip('plain.cbr', 2)))
+
+    def test_repair_puts_a_scrambled_volume_back_in_reading_order(self):
+        """The whole point. Twelve issues that displayed 1, 11, 12, 2, 3 ...
+        have to come back as 1, 2, 3 ... 12, rebuilt from inside the volume
+        with no access to the original issue files."""
+        volume = self._makecbz_volume('scrambled.cbz', [2] * 12)
+
+        before = sorted(zipfile.ZipFile(volume).namelist())
+        displayed = [n.split('_')[2].split('/')[0] for n in before]
+        self.assertEqual(displayed[:6], ['0', '0', '10', '10', '11', '11'],
+                         'the fixture does not reproduce the bug')
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rp.do_repair(volume, convert=False, work=Path(tmp))
+
+        with zipfile.ZipFile(self.library / 'scrambled.cbz') as z:
+            names = sorted(z.namelist())
+            pages = [z.read(n) for n in names]
+
+        self.assertEqual([n.split('/')[0] for n in names],
+                         [f'{i:04d}' for i in range(1, 13) for _ in range(2)])
+        expected = [jpeg_bytes(page_colour(p, i))
+                    for i in range(1, 13) for p in (1, 2)]
+        self.assertEqual(pages, expected, 'still not in reading order')
+
+    def test_repair_keeps_every_page(self):
+        volume = self._makecbz_volume('count.cbz', [3, 5, 2, 7] + [1] * 8)
+        before = gen.page_count(volume)
+        self.assertEqual(before, 25)
+        with tempfile.TemporaryDirectory() as tmp:
+            rp.do_repair(volume, convert=False, work=Path(tmp))
+        gen._PAGE_COUNTS.clear()
+        self.assertEqual(gen.page_count(self.library / 'count.cbz'), 25)
+
+    def test_repair_quarantines_the_volume_it_replaces(self):
+        volume = self._makecbz_volume('kept.cbz', [2] * 11)
+        before = volume.read_bytes()
+        with tempfile.TemporaryDirectory() as tmp:
+            rp.do_repair(volume, convert=False, work=Path(tmp))
+        self.assertEqual((self.quarantine / 'kept.cbz').read_bytes(), before)
+
+    def test_repair_keeps_the_comicinfo_and_drops_the_junk(self):
+        """ComicInfo.xml is the metadata readers index on. Dropping it loses
+        something the user had. Thumbs.db and .sfv are the packer's leftovers."""
+        volume = self.library / 'meta.cbz'
+        with zipfile.ZipFile(volume, 'w', zipfile.ZIP_STORED) as z:
+            for i in range(11):
+                folder = f'temp_extract_{i}_Series {i + 1:03d}'
+                z.writestr(f'{folder}/001.jpg', jpeg_bytes(page_colour(1, i + 1)))
+                z.writestr(f'{folder}/ComicInfo.xml',
+                           f'<ComicInfo><Number>{i + 1}</Number></ComicInfo>')
+                z.writestr(f'{folder}/Thumbs.db', b'\x00junk')
+            z.writestr('ComicInfo.xml', '<ComicInfo><Series>Whole</Series></ComicInfo>')
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rp.do_repair(volume, convert=False, work=Path(tmp))
+
+        with zipfile.ZipFile(self.library / 'meta.cbz') as z:
+            names = z.namelist()
+            # each issue keeps its own metadata, under its new number
+            self.assertIn('0001/ComicInfo.xml', names)
+            self.assertIn('0011/ComicInfo.xml', names)
+            self.assertIn('<Number>11</Number>', z.read('0011/ComicInfo.xml').decode())
+            # the volume's own metadata stays at the root
+            self.assertIn('ComicInfo.xml', names)
+            self.assertIn('<Series>Whole</Series>', z.read('ComicInfo.xml').decode())
+        self.assertFalse([n for n in names if 'Thumbs.db' in n], 'junk carried over')
+        gen._PAGE_COUNTS.clear()
+        self.assertEqual(gen.page_count(self.library / 'meta.cbz'), 11,
+                         'metadata must not be counted as pages')
+
+    def test_repair_never_re_encodes_the_comicinfo(self):
+        """--convert-nonjpeg must not treat an .xml as a page to re-encode."""
+        volume = self.library / 'conv.cbz'
+        with zipfile.ZipFile(volume, 'w', zipfile.ZIP_STORED) as z:
+            z.writestr('temp_extract_0_A/001.jpg', jpeg_bytes())
+            z.writestr('temp_extract_0_A/ComicInfo.xml', '<ComicInfo/>')
+        with tempfile.TemporaryDirectory() as tmp:
+            rp.do_repair(volume, convert=True, work=Path(tmp))
+        with zipfile.ZipFile(self.library / 'conv.cbz') as z:
+            self.assertEqual(z.read('0001/ComicInfo.xml'), b'<ComicInfo/>')
+
+    def test_repair_refuses_a_volume_it_does_not_understand(self):
+        """A page outside the extraction folders means this is not the shape we
+        think it is. Guessing where it belongs would be worse than refusing."""
+        odd = self.library / 'odd.cbz'
+        with zipfile.ZipFile(odd, 'w') as z:
+            z.writestr('temp_extract_0_A/001.jpg', jpeg_bytes())
+            z.writestr('loose page.jpg', jpeg_bytes())
+        before = odd.read_bytes()
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(RuntimeError):
+                rp.do_repair(odd, convert=False, work=Path(tmp))
+        self.assertEqual(odd.read_bytes(), before)
+        self.assertFalse(self.quarantine.exists())
+
+    def test_temp_extract_index_reads_the_issue_number_back(self):
+        self.assertEqual(rp.temp_extract_index('temp_extract_7_Some Comic 008'), 7)
+        self.assertEqual(rp.temp_extract_index('temp_extract_0_A'), 0)
+        self.assertEqual(rp.temp_extract_index('temp_extract_12_B_C_D'), 12)
+        self.assertIsNone(rp.temp_extract_index('pages'))
+        self.assertIsNone(rp.temp_extract_index('temp_extract_x_A'))
+
     # ------------------------------------------------ the dry run
 
     def test_without_execute_nothing_is_written(self):
@@ -405,6 +680,33 @@ class RepackTests(unittest.TestCase):
         rp.do_junk(p)
         self.assertFalse(p.exists())
         self.assertTrue((self.quarantine / 'looks like a comic.cbr').exists())
+
+    def test_the_redownload_list_says_where_each_file_belongs(self):
+        """A bare filename does not say which series folder the replacement
+        goes in, and several of these sit two levels down."""
+        folder = self.library / 'Murder Drones'
+        folder.mkdir()
+        p = folder / 'Murder Drones 05 (of 06).cbr'
+        p.write_bytes(b'<html><title>429 Too Many Requests</title></html>')
+        original = str(p)
+
+        with mock.patch.object(rp, 'REDOWNLOAD', self.tmp / 'redl.md'):
+            rp.write_redownload([{'kind': 'junk', 'path': original, 'status': 'ok',
+                                  **rp.do_junk(p)}])
+            text = (self.tmp / 'redl.md').read_text()
+
+        self.assertIn(original, text, 'the path it belongs at is missing')
+        self.assertIn(str(self.quarantine / 'Murder Drones'), text,
+                      'the path it was moved to is missing')
+        self.assertIn('- [ ]', text, 'it should be a checklist')
+
+    def test_the_size_is_recorded_before_the_file_moves(self):
+        """Reporting it afterwards would mean stat-ing a path that no longer
+        holds the file."""
+        p = self.library / 'big.cbr'
+        p.write_bytes(b'<html>429</html>' + b'x' * 5000)
+        out = rp.do_junk(p)
+        self.assertEqual(out['size'], 5016)
 
     def test_a_real_comic_is_not_mistaken_for_an_error_page(self):
         self.assertFalse(rp.looks_like_html(self._seven_zip('real.cbr', pages=2)))
