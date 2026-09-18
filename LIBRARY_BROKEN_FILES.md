@@ -381,7 +381,13 @@ evidence:
 * `raid_mismatch_count` is only populated by a scrub. If `lvchange --syncaction
   check vgextra/lvextra` has never been run, the 0 above means "not measured",
   not "no mismatches". Worth running once — it is read-only, needs no free space,
-  and takes some hours over 3.64 TB.
+  and reads both 3.64 TB legs, so budget 7–10 hours on drives of this vintage.
+
+  If it comes back non-zero, **do not reach for `--syncaction repair`.** A RAID1
+  has two copies and no parity, so nothing in the array can tell which leg is
+  right; repair picks one by convention and writes it over the other, which is
+  as likely to overwrite the good copy as the bad one. A non-zero count is a
+  finding to think about, not a fault to clear.
 * The normalised `VALUE` of 003 and 015 on power-on hours looks alarming and is
   not: that attribute has a threshold of 000, so it cannot trip. It counts age,
   not wear. Eight years of spinning is still eight years, and neither drive owes
