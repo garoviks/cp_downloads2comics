@@ -723,6 +723,174 @@ class RepackTests(unittest.TestCase):
             rp.extract(nasty, self.tmp / 'out')
         self.assertFalse((self.tmp.parent / 'escaped.jpg').exists())
 
+    # ------------------------------------------------ rescue
+
+    # A rescue relaxes the one check that makes a repack safe — that the page
+    # count did not change — because the source is unreadable by the tool that
+    # produces that number. These pin what replaces it: every page proved to
+    # decode, and every page that did not reported rather than dropped.
+
+    def _damaged(self, name, good=3, broken=1):
+        """A zip of `good` real pages plus `broken` files that are named like
+        pages and are not images. Stands in for the real failure, where `unar`
+        writes out the truncated tail of an archive as an ordinary file."""
+        path = self.library / name
+        with zipfile.ZipFile(path, 'w', zipfile.ZIP_STORED) as z:
+            for i in range(1, good + 1):
+                z.writestr(f'{i:03d}.jpg', jpeg_bytes(page_colour(i)))
+            for i in range(good + 1, good + broken + 1):
+                z.writestr(f'{i:03d}.jpg', b'\x00truncated, not an image')
+        return path
+
+    def test_rescue_keeps_only_the_pages_that_actually_decode(self):
+        """The half-written page must not be packed. Pillow's open() reads the
+        header and stops, so only load() catches this."""
+        path = self._damaged('hurt.cbz', good=3, broken=1)
+        out = rp.do_rescue(path, False, self._work())
+
+        self.assertEqual(out['pages_after'], 3)
+        with zipfile.ZipFile(out['final']) as z:
+            self.assertEqual(sorted(z.namelist()),
+                             ['001.jpg', '002.jpg', '003.jpg'])
+
+    def test_rescue_reports_the_page_it_could_not_save(self):
+        """The whole contract. A rescue is allowed to lose a page; it is not
+        allowed to lose one quietly."""
+        path = self._damaged('hurt.cbz', good=3, broken=1)
+        out = rp.do_rescue(path, False, self._work())
+
+        self.assertEqual(out['pages_claimed'], 4)
+        self.assertEqual(out['pages_lost'], 1)
+        self.assertEqual(out['undecodable'], 1)
+
+    def test_a_rescue_that_loses_nothing_says_so(self):
+        """The ACE pair are intact, and must not be reported as damaged."""
+        path = self._damaged('whole.cbz', good=4, broken=0)
+        out = rp.do_rescue(path, False, self._work())
+
+        self.assertEqual(out['pages_after'], 4)
+        self.assertEqual(out['pages_lost'], 0)
+        self.assertEqual(out['undecodable'], 0)
+
+    def test_a_rescue_that_saves_nothing_leaves_the_original_alone(self):
+        """Same rule as a failed repack: an unreadable comic is still better
+        than a missing one."""
+        path = self._damaged('hopeless.cbz', good=0, broken=3)
+        before = path.read_bytes()
+
+        with self.assertRaises(RuntimeError):
+            rp.do_rescue(path, False, self._work())
+
+        self.assertTrue(path.exists(), 'original was moved out and never came back')
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(any(self.staging.rglob('*')) if self.staging.exists() else False)
+
+    def test_rescue_still_moves_the_original_to_quarantine(self):
+        """Salvage does not license deleting what it salvaged from."""
+        path = self._damaged('hurt.cbr', good=3, broken=1)
+        before = path.read_bytes()
+        rp.do_rescue(path, False, self._work())
+
+        kept = self.quarantine / 'hurt.cbr'
+        self.assertTrue(kept.exists(), 'original was not kept')
+        self.assertEqual(kept.read_bytes(), before)
+
+    def test_rescue_refuses_to_overwrite_an_existing_destination(self):
+        path = self._damaged('clash.cbr', good=3, broken=1)
+        (self.library / 'clash.cbz').write_bytes(b'something already here')
+
+        with self.assertRaises(FileExistsError):
+            rp.do_rescue(path, False, self._work())
+        self.assertTrue(path.exists())
+        self.assertEqual((self.library / 'clash.cbz').read_bytes(),
+                         b'something already here')
+
+    def _overwritten(self, name, good=3, nulls=2 << 20):
+        """A readable archive with megabytes of zeros welded onto the end.
+
+        The real failure: the file was not cut short, it was written over. What
+        still reads is whatever sat before the zeros began, which is a fragment
+        from wherever the damage happened to start, not the front of the comic.
+        """
+        path = self._damaged(name, good=good, broken=0)
+        with open(path, 'ab') as f:
+            f.write(b'\x00' * nulls)
+        return path
+
+    def test_a_truncated_file_is_not_mistaken_for_an_overwritten_one(self):
+        """The direction that must not produce a false positive. A truncated
+        download ends in real bytes — bar the handful a zip's end-of-central-
+        directory contributes, since its comment length is a zero field. Every
+        one in the library measures in bytes; the overwritten ones measure in
+        megabytes, so the margin between them is six orders of magnitude."""
+        path = self._damaged('cut.cbz', good=3, broken=1)
+        self.assertLess(rp.overwritten_bytes(path), rp.OVERWRITTEN_MIN)
+
+    def test_an_overwritten_file_is_measured_by_the_zeros_it_ends_in(self):
+        path = self._overwritten('zeroed.cbz', nulls=3 << 20)
+        self.assertGreaterEqual(rp.overwritten_bytes(path), 3 << 20)
+
+    def test_rescue_refuses_a_file_that_ends_in_nul(self):
+        """A 2-page fragment wearing a full issue's name is worse than the
+        broken original, which at least failed openly. One of these reached the
+        library before the check existed."""
+        path = self._overwritten('zeroed.cbr')
+        before = path.read_bytes()
+
+        with self.assertRaises(RuntimeError) as caught:
+            rp.do_rescue(path, False, self._work())
+
+        self.assertIn('NUL', str(caught.exception))
+        self.assertTrue(path.exists())
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse((self.library / 'zeroed.cbz').exists(),
+                         'refused, and yet something was written')
+
+    def test_salvaging_a_fragment_refuses_to_guess_what_it_lost(self):
+        """The override still runs, and still will not invent the one number it
+        cannot know. Reporting `claimed - recovered` here would measure how far
+        the lister read before the zeros, not how many pages the comic had."""
+        path = self._overwritten('zeroed.cbr')
+        rp.SALVAGE_FRAGMENTS = True
+        try:
+            out = rp.do_rescue(path, False, self._work())
+        finally:
+            rp.SALVAGE_FRAGMENTS = False
+
+        self.assertTrue(out['fragment'])
+        self.assertIsNone(out['pages_lost'])
+        self.assertEqual(out['pages_after'], 3)
+
+    def test_the_overwritten_files_are_off_the_rescue_list(self):
+        """They were on it, and one of them got rescued before the check
+        existed. The bytes are what stops it now, but leaving them listed as
+        rescuable would invite someone to try again and wonder why it refuses."""
+        self.assertFalse(set(rp.OVERWRITTEN) & set(rp.RESCUE))
+        self.assertFalse(set(rp.OVERWRITTEN) & set(rp.PHASE1))
+
+    def test_the_rescue_list_is_not_also_the_repack_list(self):
+        """RESCUE and PHASE1 describe different faults and different handling.
+        A path in both would be repacked twice and quarantined twice."""
+        self.assertFalse(set(rp.RESCUE) & set(rp.PHASE1))
+        self.assertFalse(set(rp.RESCUE) & set(rp.HTML_JUNK))
+        self.assertEqual(len(rp.RESCUE), len(set(rp.RESCUE)))
+
+    # ------------------------------------------------ format detection
+
+    def test_an_archive_carrying_a_nested_zip_is_not_called_a_zip(self):
+        """is_zipfile() scans backwards from the end of the file, so it answers
+        yes for a RAR that holds a .zip. Extracting that as a zip yields the
+        inner archive's contents instead of the comic's. Two files in the real
+        library do this."""
+        path = self.tmp / 'nested.cbr'
+        inner = io.BytesIO()
+        with zipfile.ZipFile(inner, 'w') as z:
+            z.writestr('PICCHECK.exe', b'not a page')
+        path.write_bytes(gen.RAR_MAGIC + b'\x00' * 64 + inner.getvalue())
+
+        self.assertTrue(zipfile.is_zipfile(path), 'fixture does not reproduce it')
+        self.assertEqual(rp.detect_format(path), 'rar')
+
 
 if __name__ == '__main__':
     unittest.main()

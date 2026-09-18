@@ -100,6 +100,49 @@ HTML_JUNK = [
     "Red Roots/Red Roots 004 (2026) (Digital) (Mephisto-Empire).cbr",
 ]
 
+# Files the page-count sweep called unreadable that a tolerant extractor opens.
+# Two separate reasons, and the report keeps them apart because the outcome
+# differs: the ACE pair is completely intact and loses nothing, while each
+# truncated archive gives up everything except its final page.
+#
+# All nine have been rescued. The list is kept because it is the record of which
+# files were treated this way, and because plan_rescue() now reports each as
+# "reads fine now" rather than doing the work twice.
+RESCUE = [
+    # ACE — not damaged at all, just a 1998 format nothing else here reads.
+    "Spirou & Fantasio/Spirou & Fantasio 19 - Baby Fever in Champignac.cbr",
+    "Aria (Collection) GetComics.INFO/Aria 07 - A Murder of Crows (Ringoscann).cbr",
+    # Truncated downloads — unar keeps everything before the cut.
+    "Trigan Empire /The Rise and Fall of the Trigan Empire v02 (2020) (digital) (Mr Norrell-Empire).cbr",
+    "Image comics/Carbon Grey/Carbon Grey - Omnibus (2016) GetComics.INFO.cbr",
+    "Image comics/Lake of Fire (2017) (Digital) (XRA-Empire).cbz",
+    "The Celestial Bibendum/The Celestial Bibendum 2 (Digital) (Humanoids).cbr",
+    "Europe Comics (Collection)/Stern/Stern 02 - City of Savages _2018_ _Europe Comics_ _Digital-Empire_ (newcomic.info).cbr",
+    "The Celestial Bibendum/The Celestial Bibendum 3 (Digital) (Humanoids).cbr",
+    "Europe Comics (Collection)/Where is Kiki (Europe Comics 2020) (webrip) (MagicMan-DCP).cbr",
+]
+
+# These were on RESCUE until it emerged they are not truncated but overwritten —
+# each ends in megabytes of NUL and holds a fragment of its comic, the worst of
+# them two pages of about thirty-two, numbered from the middle. See
+# overwritten_bytes(). Decision was to re-download rather than salvage: a file
+# that will not open is honest about its state, and a two-page .cbz wearing a
+# full issue's name is not.
+#
+# Kept here rather than deleted so that a later sweep rediscovering them as
+# "unreadable, but unar gets pages out" finds the answer instead of the question.
+# do_rescue() refuses them on the bytes, not on this list, so adding one back by
+# hand would not defeat the check; --salvage-fragments is the way to override it.
+OVERWRITTEN = [
+    "Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 001 (2009) (Three Covers) (Minutemen-Shamil).cbr",
+    "Grant Morrison/Comics/Ultimate X-Men/(093) Ultimate X-Men #085.cbr",
+    "Grant Morrison/Comics/Ultimate X-Men/(098) Ultimate X-Men #090.cbr",
+    "Grant Morrison/Comics/Ultimate X-Men/(087) Ultimate X-Men #079.cbr",
+    "Ted McKeever (Collection) (1987-2007)/1995 - Engines (DC Legends of the Dark Knight 74-75)/Legends of the Dark Knight 074.cbz",
+    "Grant Morrison/Comics/Ultimate X-Men/(043) Ultimate X-Men #038.cbr",
+    "Grant Morrison/Comics/Ultimate X-Men/(001) Ultimate X-Men #00½.cbr",
+]
+
 JPEG_EXTS = {'.jpg', '.jpeg', '.jpe'}
 
 # What a bare --merge picks up in a folder, matching makecbz.py's default.
@@ -140,21 +183,31 @@ def temp_extract_index(name):
 
 
 def detect_format(path):
-    """'zip', 'rar', '7z', 'tar' or None, from the bytes rather than the name.
+    """'zip', 'rar', '7z', 'ace', 'tar' or None, from the bytes not the name.
 
     The same order as list_members() in the generator, and for the same reason:
     a name is a claim, not evidence, and every file here is misnamed.
+
+    is_zipfile() comes last, and that ordering is load-bearing. It does not read
+    byte 0 — it scans backwards from the end for a central directory, because a
+    zip may carry a prefix. So an archive holding a nested .zip answers yes and
+    would be extracted as that inner zip. Two files in the library do exactly
+    this; one of them is a RAR of 97 pages carrying a zipped DOS utility.
     """
-    if zipfile.is_zipfile(path):
-        return 'zip'
     with open(path, 'rb') as f:
         head = f.read(len(gen.ACE_MAGIC) + 7)
+    if head.startswith(gen.ZIP_MAGIC):
+        return 'zip'
     if head.startswith(gen.RAR_MAGIC):
         return 'rar'
     if head.startswith(gen.SEVENZ_MAGIC):
         return '7z'
+    if head[7:].startswith(gen.ACE_MAGIC):
+        return 'ace'
     if tarfile.is_tarfile(path):
         return 'tar'
+    if zipfile.is_zipfile(path):
+        return 'zip'
     return None
 
 
@@ -180,13 +233,45 @@ def extract(path, dest):
         # `x` keeps the paths inside the archive; `e` would flatten them and
         # silently collide two pages that share a name in different folders.
         _run(['unrar', 'x', '-y', '-idq', str(path), str(dest) + '/'])
+    elif fmt == 'ace':
+        # unace writes into the current directory and has no -o, so it is run
+        # with dest as its cwd. `x` keeps the stored paths, as with unrar.
+        _run(['unace', 'x', '-y', str(path)], cwd=dest)
     else:
         raise ValueError(f'no format we can extract: {path}')
     return fmt
 
 
-def _run(cmd):
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+def extract_tolerant(path, dest):
+    """Extract with `unar`, which reads damaged archives the others refuse.
+
+    This is the whole reason MComix opens files the page-count sweep called
+    unreadable. On a truncated RAR, `unrar` refuses outright and `7z` lists the
+    members while extracting nothing usable, but `unar` walks the file until it
+    hits the damage and keeps everything before it — 188 of 189 pages, in the
+    worst case measured.
+
+    Deliberately not wired into extract(): a tolerant extractor that returns
+    partial data is the right tool when the file is known to be damaged and the
+    wrong one when it is not, because a silent partial success is exactly what
+    the ordinary path is built to prevent.
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    # -D because unar invents a containing folder when an archive has more than
+    # one top-level entry. That folder is the extractor's, not the comic's, and
+    # burying every page a level deeper than the original had them is a change
+    # to the file we were asked to preserve.
+    #
+    # unar reports damage on stderr and still exits non-zero for a partial
+    # extraction, which here is a success, so the exit code is not the test.
+    # What came out is, and the caller decodes every page to decide.
+    subprocess.run(['unar', '-q', '-f', '-D', '-o', str(dest), str(path)],
+                   capture_output=True, text=True, timeout=1800)
+
+
+def _run(cmd, cwd=None):
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=1800,
+                         cwd=None if cwd is None else str(cwd))
     if out.returncode != 0:
         raise RuntimeError(f'{cmd[0]} failed ({out.returncode}): '
                            f'{out.stderr.strip()[:300]}')
@@ -433,6 +518,194 @@ def do_repack(path, convert, work):
 
     _finish(staged, path, new_file, final)
     return {'pages_after': expected, 'converted': converted,
+            'new_size': final.stat().st_size, 'final': str(final)}
+
+
+def decodes(page):
+    """True if this really is an image, readable to its last byte.
+
+    The presence of a file proves nothing here: `unar` writes out the truncated
+    tail of a damaged archive as an ordinary file. Pillow is lazy — `open()`
+    reads the header and stops, which would accept exactly the half-written page
+    this exists to catch — so the pixels are forced through `load()`.
+    """
+    from PIL import Image
+    try:
+        with Image.open(page) as im:
+            im.load()
+        return True
+    except Exception:
+        return False
+
+
+def claimed_pages(path):
+    """How many pages the archive says it holds, or None if nothing can tell.
+
+    Deliberately not `gen.page_count()`: these files are on this list precisely
+    because that returns None for them. A lister answers where an extractor
+    refuses, and the number is only used to report what a rescue lost — never to
+    verify one.
+    """
+    fmt = detect_format(path)
+    try:
+        if fmt == 'ace':
+            out = subprocess.run(['unace', 'l', str(path)], capture_output=True,
+                                 text=True, timeout=600)
+            lines = out.stdout.splitlines()
+        else:
+            out = subprocess.run(['lsar', str(path)], capture_output=True,
+                                 text=True, timeout=600)
+            # The first line of lsar output is the archive's own name.
+            lines = out.stdout.splitlines()[1:]
+        if out.returncode != 0 and not lines:
+            return None
+    except (subprocess.SubprocessError, OSError):
+        return None
+    # unace truncates long paths for display, but an extension survives it.
+    return sum(1 for line in lines
+               if Path(line.strip()).suffix.lower() in gen.PAGE_EXTS)
+
+
+def overwritten_bytes(path, chunk=1 << 20):
+    """How many bytes of NUL the file ends in.
+
+    This is what separates a download that was cut short from a file the storage
+    wrote zeros over, and the two need opposite treatment even though every
+    listing tool describes them identically. A lister stops at the damage in
+    both cases and reports what it reached, so both come back as "a few pages,
+    then corruption".
+
+    A truncated download ends in real bytes: the final page's data is there but
+    incomplete, and nothing follows it. Measured across this library, every one
+    of those ends in under a dozen NULs — a zip's end-of-central-directory
+    finishes with a zero comment length, so a few are structural — and loses
+    exactly its last page.
+
+    An overwritten file ends in megabytes of nothing, and what still reads is
+    whichever pages happened to sit before the zeros began. One of these was a
+    29 MB issue holding two readable pages, numbered 014 and 015 — a fragment
+    from the middle of a comic, which the lister called "3 pages" because three
+    is as far as it got. Rescuing it produced a 2-page file wearing the full
+    issue's name: worse than the broken original, which at least failed openly.
+
+    The measured split is absolute — 0 bytes against 1.15 MB at the narrowest —
+    so the 1 MB threshold is a sanity margin, not a tuned parameter.
+    """
+    size, n = path.stat().st_size, 0
+    with open(path, 'rb') as f:
+        while n < size:
+            step = min(chunk, size - n)
+            f.seek(size - n - step)
+            block = f.read(step).rstrip(b'\x00')
+            n += step - len(block)
+            if block:
+                break
+    return n
+
+
+OVERWRITTEN_MIN = 1 << 20
+
+# Set once from main(). A module flag rather than an argument because the job
+# functions share one signature so that main() can dispatch on the plan's kind,
+# and widening it for a switch only one of the four reads is the worse trade.
+SALVAGE_FRAGMENTS = False
+
+
+def plan_rescue(path):
+    nulls = overwritten_bytes(path)
+    # A rescued .cbz keeps the name it had when the source was already .cbz, so
+    # it stays on the list and a second run would rescue the rescue. The counter
+    # answering at all is the proof there is nothing left to do: these files are
+    # on this list precisely because it returned None for them.
+    gen._PAGE_COUNTS.clear()
+    done = gen.page_count(path)
+    return {'kind': 'rescue', 'path': str(path), 'format': detect_format(path),
+            'pages_before': claimed_pages(path) if done is None else done,
+            'size': path.stat().st_size,
+            'overwritten': nulls, 'convert': False,
+            'nothing_to_do': done is not None,
+            'dest': str(path.with_suffix('.cbz'))}
+
+
+def do_rescue(path, convert, work):
+    """Salvage what a tolerant extractor can read out of an archive the
+    ordinary tools refuse.
+
+    A different contract from do_repack, and the difference is the entire point.
+    do_repack verifies that the page count did not change, because losing a page
+    silently is the failure it exists to prevent. That check cannot be made here:
+    the source is unreadable by the tools that produce that number, which is why
+    the file is on this list at all.
+
+    So the check is replaced rather than dropped. Every extracted page must
+    decode to its last byte, the rebuilt archive must hold exactly the pages that
+    decoded — verified through the same counter as any other repack — and
+    whatever the archive claimed but could not deliver is reported per file
+    instead of being quietly rounded away.
+
+    Salvage is never silent. A caller reading the log can always tell a rescue
+    that lost nothing from one that lost a page.
+
+    Files ending in a NUL run are refused outright, because for those the one
+    number this function reports honestly cannot be computed — see
+    overwritten_bytes(). `--salvage-fragments` overrides the refusal for a caller
+    who wants the pages anyway and has read what they are getting.
+    """
+    claimed = claimed_pages(path)
+    nulls = overwritten_bytes(path)
+    if nulls >= OVERWRITTEN_MIN and not SALVAGE_FRAGMENTS:
+        raise RuntimeError(
+            f'ends in {mb(nulls)} of NUL — overwritten, not truncated. The '
+            f'pages that still read are a fragment and the real page count is '
+            f'unknowable, so the loss cannot be reported. Use '
+            f'--salvage-fragments to take them anyway.')
+    final = path.with_suffix('.cbz')
+    staged = stage(path, final)
+    try:
+        extracted = work / 'in'
+        if detect_format(staged) == 'ace':
+            # ACE is not damaged, merely unreadable by everything else here:
+            # unace extracts it whole, and unar cannot read the format at all.
+            extract(staged, extracted)
+        else:
+            extract_tolerant(staged, extracted)
+
+        found = pages_in(extracted)
+        good = [(rel, abs_path) for rel, abs_path in found if decodes(abs_path)]
+        if not good:
+            raise RuntimeError(f'recovered no readable page from {len(found)} '
+                               f'extracted file(s)')
+
+        converted, entries = 0, []
+        for rel, abs_path in good:
+            if convert and abs_path.suffix.lower() not in JPEG_EXTS:
+                abs_path = to_jpeg(abs_path)
+                rel = rel.with_suffix('.jpg')
+                converted += 1
+            entries.append((str(rel), abs_path))
+        entries += [(str(rel), abs_path) for rel, abs_path in extras_in(extracted)]
+        entries.sort(key=lambda e: e[0])
+
+        new_file = work / 'out.cbz'
+        write_cbz(entries, new_file)
+        verify(new_file, len(good))
+    except BaseException:
+        unstage(staged, path)
+        raise
+
+    _finish(staged, path, new_file, final)
+    fragment = nulls >= OVERWRITTEN_MIN
+    return {'pages_after': len(good), 'converted': converted,
+            'pages_claimed': claimed, 'overwritten': nulls,
+            'fragment': fragment,
+            # Only meaningful for a truncated file, where the lister reached the
+            # end and the count it gave is the real one. On an overwritten file
+            # the lister stopped where the zeros started, so claimed - recovered
+            # measures the tool's reach and not the loss, and reporting it would
+            # be a confident wrong number in place of an honest unknown.
+            'pages_lost': None if fragment or claimed is None
+                          else max(claimed - len(good), 0),
+            'undecodable': len(found) - len(good),
             'new_size': final.stat().st_size, 'final': str(final)}
 
 
@@ -755,12 +1028,21 @@ def write_report(results, convert):
     print(f'\nreport -> {REPORT}')
 
 
+KEEP = '<!-- Everything below is hand-written. The generator keeps it. -->'
+
+
 def write_redownload(moved):
     """A checklist of comics to fetch again, each with the path it belongs at.
 
     The full path rather than the bare name: the name alone does not say which
     series folder the replacement should land in, and several of these sit two
     levels down.
+
+    Only the 429 section is generated. Anything below the KEEP marker is read
+    back off disk and written out again untouched, because this file also
+    carries hand-written sections — the archives that hold no pages, and the
+    ones damaged past rescue — and a run that repacks one comic should not
+    silently delete a list of twenty-nine others. It did, once.
     """
     lines = ['# Comics to download again',
              '',
@@ -772,6 +1054,9 @@ def write_redownload(moved):
              'The path shown is where the file was, and where the replacement',
              'should go. The error page itself is now at the same relative path',
              'under `/mnt/extramedia/_quarantine/`.',
+             '',
+             'This is one of four groups. The rest, and a ready-made prompt for',
+             'handing the whole job to an agent, are further down the file.',
              '']
     total = 0
     for r in sorted(moved, key=lambda r: r['path']):
@@ -786,8 +1071,13 @@ def write_redownload(moved):
         lines.append(f'  - belongs at `{original}`')
         if r.get('quarantined'):
             lines.append(f'  - error page now at `{r["quarantined"]}`')
-    lines += ['', f'{len(moved)} files, {mb(total)} of disk that was never a comic.']
-    REDOWNLOAD.write_text('\n'.join(lines) + '\n')
+    lines += ['', f'{len(moved)} files, {mb(total)} of disk that was never a comic.',
+              '', KEEP, '']
+    if REDOWNLOAD.exists():
+        old = REDOWNLOAD.read_text()
+        if KEEP in old:
+            lines.append(old.split(KEEP, 1)[1].lstrip('\n'))
+    REDOWNLOAD.write_text('\n'.join(lines).rstrip('\n') + '\n')
     print(f'redownload list -> {REDOWNLOAD}')
 
 
@@ -916,12 +1206,20 @@ def main():
                          f'(default: {MERGE_PATTERNS})')
     ap.add_argument('--dir', default='.', metavar='DIR',
                     help='with --merge and --pattern, where to look (default: .)')
+    ap.add_argument('--rescue', action='store_true',
+                    help='salvage the archives the ordinary extractors refuse, '
+                         'using unar; reports per file what could not be saved')
+    ap.add_argument('--salvage-fragments', action='store_true',
+                    help='rescue files that end in NUL too, accepting that what '
+                         'comes out is a fragment of unknown completeness')
     ap.add_argument('--repair', action='store_true',
                     help='rebuild makecbz.py volumes in the right issue order')
     ap.add_argument('--find-misordered', nargs='?', const=str(LIBRARY),
                     metavar='ROOT',
                     help='scan for volumes that read in the wrong order and exit')
     args = ap.parse_args()
+    global SALVAGE_FRAGMENTS
+    SALVAGE_FRAGMENTS = args.salvage_fragments
 
     if args.find_misordered:
         root = Path(args.find_misordered)
@@ -964,6 +1262,9 @@ def main():
     if args.files:
         targets = [Path(f) for f in args.files]
         junk = []
+    elif args.rescue:
+        targets = [LIBRARY / r for r in RESCUE]
+        junk = []
     else:
         targets = [LIBRARY / r for r in PHASE1]
         junk = [] if args.skip_junk else [LIBRARY / r for r in HTML_JUNK]
@@ -972,12 +1273,23 @@ def main():
         targets = [p for p in targets if args.only.lower() in str(p).lower()]
         junk = [p for p in junk if args.only.lower() in str(p).lower()]
 
-    missing = [p for p in targets + junk if not p.exists()]
+    # A finished job leaves its list pointing at names that no longer exist: a
+    # rescued .cbr is now a .cbz. That is the list being done, not the library
+    # having moved, and saying "not where the report said they were" about eight
+    # files that were handled correctly sends the next reader looking for a
+    # problem that is not there.
+    done = [p for p in targets if not p.exists() and p.with_suffix('.cbz').exists()]
+    missing = [p for p in targets + junk
+               if not p.exists() and p not in done]
     if missing:
         print('These are not where the report said they were:')
         for p in missing:
             print(f'  {p}')
         return 1
+    if done:
+        print(f'{len(done)} already done, now .cbz:')
+        for p in done:
+            print(f'  {p.stem}')
     targets = [p for p in targets if p.exists()]
 
     if not targets and not junk:
@@ -995,12 +1307,15 @@ def main():
         try:
             if args.repair:
                 plan = plan_repair(p)
+            elif args.rescue:
+                plan = plan_rescue(p)
             elif _is_wrapper(p):
                 plan = plan_omnibus(p)
             else:
                 plan = plan_repack(p, args.convert_nonjpeg)
         except Exception as e:
-            plan = {'kind': 'repair' if args.repair else 'repack',
+            plan = {'kind': 'repair' if args.repair
+                    else 'rescue' if args.rescue else 'repack',
                     'path': str(p), 'error': str(e)}
         plans.append(plan)
         _print_plan(plan)
@@ -1043,12 +1358,20 @@ def main():
         try:
             with tempfile.TemporaryDirectory(dir=TEMP_ROOT, prefix='repack_') as tmp:
                 work = Path(tmp)
-                op = {'omnibus': do_omnibus, 'repair': do_repair}.get(
-                    plan['kind'], do_repack)
+                op = {'omnibus': do_omnibus, 'repair': do_repair,
+                      'rescue': do_rescue}.get(plan['kind'], do_repack)
                 out = op(p, args.convert_nonjpeg, work)
             results.append({**plan, **out, 'status': 'ok'})
             print(f' {out["pages_after"]} pages, {mb(out["new_size"])}'
-                  + (f', {out["converted"]} converted' if out['converted'] else ''))
+                  + (f', {out["converted"]} converted' if out['converted'] else '')
+                  # A rescue that lost a page says so on the line that reports
+                  # it, not only in the log a reader has to go looking for.
+                  + (f' — LOST {out["pages_lost"]} of {out["pages_claimed"]}'
+                     if out.get('pages_lost') else '')
+                  # A salvaged fragment cannot say how much it lost, so it says
+                  # that instead. Silence here would read as "lost nothing".
+                  + (' — FRAGMENT, true page count unknown'
+                     if out.get('fragment') else ''))
         except Exception as e:
             results.append({**plan, 'status': 'failed', 'error': str(e)})
             print(f' FAILED: {e}')
@@ -1136,6 +1459,24 @@ def _print_plan(plan):
               f'{len(plan["inner"])} comics  {p.name}')
         for m in plan['inner']:
             print(f'                          + {m}')
+    elif plan['kind'] == 'rescue' and plan.get('nothing_to_do'):
+        print(f'  done        {mb(plan["size"]):>8}  reads fine now, '
+              f'{plan["pages_before"]} pages  {p.name}')
+    elif plan['kind'] == 'rescue':
+        fragment = plan.get('overwritten', 0) >= OVERWRITTEN_MIN
+        if fragment:
+            # Not "claims N pages": the lister stopped at the zeros, so N is how
+            # far it read. Saying what the file actually is leaves less room to
+            # mistake a fragment for a comic.
+            claims = (f'ends in {mb(plan["overwritten"])} of NUL, '
+                      f'{plan["pages_before"]} pages readable before it')
+        elif plan['pages_before'] is None:
+            claims = 'page count unknown'
+        else:
+            claims = f'claims {plan["pages_before"]} pages'
+        print(f'  {"fragment" if fragment else "rescue":<10}  '
+              f'{mb(plan["size"]):>8}  {plan["format"]} -> zip, '
+              f'{claims}  {p.name}')
     elif plan.get('nothing_to_do'):
         print(f'  nothing     {mb(plan["size"]):>8}  already a zip .cbz, '
               f'{plan["pages_before"]} pages  {p.name}')

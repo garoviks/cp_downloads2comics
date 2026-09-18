@@ -1266,17 +1266,18 @@ def list_members(path: Path) -> Optional[List[str]]:
     import tarfile
     import zipfile
     try:
-        if zipfile.is_zipfile(path):
-            with zipfile.ZipFile(path) as z:
-                return z.namelist()
         with open(path, 'rb') as f:
             head = f.read(len(ACE_MAGIC) + 7)
         if head.startswith(ZIP_MAGIC):
-            # Starts like a zip but would not open, so its central directory is
-            # damaged. Truncated downloads look like this. The file claims to be
-            # an archive and we cannot see inside it, which is not the same as
-            # seeing inside and finding no pages.
-            return None
+            try:
+                with zipfile.ZipFile(path) as z:
+                    return z.namelist()
+            except zipfile.BadZipFile:
+                # Starts like a zip but would not open, so its central directory
+                # is damaged. Truncated downloads look like this. The file claims
+                # to be an archive and we cannot see inside it, which is not the
+                # same as seeing inside and finding no pages.
+                return None
         if head.startswith(RAR_MAGIC):
             out = subprocess.run(['unrar', 'lb', str(path)], capture_output=True,
                                  text=True, timeout=120)
@@ -1300,6 +1301,16 @@ def list_members(path: Path) -> Optional[List[str]]:
         if tarfile.is_tarfile(path):
             with tarfile.open(path) as t:
                 return t.getnames()
+        # Only now ask zipfile, and only because a zip is allowed to carry a
+        # prefix before its first local header — a self-extracting stub, say.
+        # This test has to come last: is_zipfile() scans *backwards* from the
+        # end of the file for a central directory, so a RAR that happens to
+        # hold a .zip inside it answers yes and gets read as that inner zip.
+        # One did. A 97-page art book was reported as holding no images
+        # because the nested zip it carried held only a DOS utility.
+        if zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path) as z:
+                return z.namelist()
         # No format we can name: it holds nothing, and that is known rather
         # than assumed. `unrar lb` cannot say it — handed a file that is not a
         # RAR at all it exits 0 and prints nothing, which would make 'not a

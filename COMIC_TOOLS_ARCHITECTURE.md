@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **253 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **272 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -1807,6 +1807,106 @@ tested the way it is. Removing the check changed no result, because this `unrar`
 zero-with-no-output for anything that is not a RAR — the test was passing through unrar's
 behaviour instead of pinning ours. It now asserts that a non-archive is settled *without
 unrar being asked at all*, which is the actual guarantee.
+
+### 10.11 Asking the wrong tool, and believing its shrug
+
+Two further faults were found in `list_members`, and they share one shape: **a tool's
+inability to read a file was recorded as a fact about the file.** Between them they had
+condemned 16 comics that were never broken. Neither was found by a test — both surfaced
+because the user contradicted the report.
+
+**`is_zipfile` was asked before byte 0.** `zipfile.is_zipfile()` does not read the start of
+a file; it scans *backwards from the end* for a central directory, because a zip may
+legitimately carry a prefix. So any archive holding a nested `.zip` answers yes and is then
+read as that inner zip. `Luis Royo - Subversive Beauty & Portfolio.cbr` is a RAR of 97 JPEGs
+that also carries a small zip holding a DOS utility; the counter listed `PICCHECK.exe`,
+`INI2REG.exe` and three friends, found no images, and filed a 97-page art book as empty.
+Both `unrar` and `unar` read it without complaint — it was never damaged.
+
+The fix is ordering, not logic: magic bytes at byte 0 decide the format, and `is_zipfile`
+is consulted only after every signature has failed, where its backwards scan is the right
+tool for the one case it is meant for. `tests/test_page_count.py` pins both directions —
+a RAR-carrying-a-zip must not be read as the zip, and a zip behind a stub must still be
+found. The old ordering was confirmed to fail those tests before the fix was written.
+
+**`unrar` was the only RAR reader.** The user reported MComix opening a file this report
+called unreadable. MComix uses `unar`, and on damaged RARs the two disagree enormously:
+for `Trigan Empire v02`, `unrar` refuses outright and `7z` lists 189 members while
+extracting **zero** decodable images, but `unar` extracts **188 real JPEGs**. Re-testing all
+21 "could not be read" files with `unar`, decoding every page through Pillow rather than
+trusting the listing, recovered **641 pages across 15 files** — one of which, Metal Hurlant
+v02, is completely intact and had simply been refused.
+
+Two details make the diagnosis rather than just the count:
+
+* **Fourteen of the fifteen are missing exactly one page, always the last.** That is a
+  download cut short at the end, not corruption — and it explains why so much survives.
+* Running the same `unar` pass over the *other* section, the 19 NUL-damaged files, rescued
+  **nothing**. Confirmatory rather than disappointing: a tolerant reader still needs a
+  header, and in those files byte 0 is gone. Damage at the tail is recoverable; damage at
+  the head is not. The two sections of that report are now known to be genuinely different
+  failures rather than two labels for "will not open".
+
+The `unar` fallback is **not yet in `list_members`** — it changes how every RAR in a
+29,515-file library is counted, which deserves a deliberate decision. Until it lands, any
+re-run of the sweep will rediscover these 15 as broken.
+
+`repack_comics.py` cannot rescue them either, and the reason is worth stating because it
+was nearly missed: `extract()` shells out to `unrar x`, which fails on exactly the files
+that are on this list. Worse, verification compares the rebuilt page count against the
+source count — and for a rescue the source count is unreadable by definition. A rescue mode
+therefore has to relax the one check that guarantees no page is silently dropped, so it must
+report what was lost per file (*"188 of 189, last page lost"*) rather than quietly passing.
+That is a different contract from a repack, not a flag on the same one.
+
+**The pattern worth keeping.** Three rounds of false alarms have now been retracted from
+`LIBRARY_BROKEN_FILES.md` — the `.jpe` extension, the 7z/tar/ACE containers, and these two
+— and every correction moved files *out* of the list. The report total fell from 5.6 GB
+across 66 files to 0.9 GB across 31 without a single file being repaired. A negative result
+from a parser is evidence about the parser first, and only then about the data.
+
+### 10.12 The same mistake, made by me, in the opposite direction
+
+Rescue mode shipped and ran. Nine of the fifteen files came out as predicted: the ACE pair
+whole, seven truncated downloads each one page short. The remaining seven were reported as
+"lost 1 of 3", and that number was wrong in a way the previous section should have caught.
+
+A lister stops at the first damage and reports what it reached. `lsar` saying "3 pages"
+means it read three before it stopped — not that the comic had three. §10.11 is entirely
+about not treating a tool's limit as a fact about the file, and I then computed
+`claimed - recovered` as the loss, which measures the lister's reach and nothing else. The
+check the rescue was built around — *never lose a page silently* — was reporting a
+confident number in place of an honest unknown.
+
+What separates the two shapes is not the listing but what follows the damage:
+
+* **Truncated** — ends in real bytes. The last page was cut mid-write; about a megabyte of
+  it sits past the archive's last indexed member. Everything before is a whole comic.
+* **Overwritten** — ends in *megabytes of NUL*. The same storage damage as the 25 files
+  that hold nothing, differing only in where the zeros landed. What still reads is whatever
+  sat before them, and how much is missing is unknowable, because the only thing that could
+  count the rest is reading zeros.
+
+The split is absolute: truncated files end in under a dozen NUL bytes (a zip's
+end-of-central-directory contributes a few structurally), overwritten ones in 1.1 MB to
+26 MB. Nothing between. `overwritten_bytes()` measures it by walking backwards from EOF, and
+`do_rescue()` refuses on that measurement rather than on a list, so re-adding a file by hand
+does not defeat it. `--salvage-fragments` overrides, and even then reports `pages_lost` as
+`None`.
+
+The cost of finding out late: `Anna Mercury 2 001` was rescued before the check existed,
+putting a 2-page `.cbz` into the library under a full issue's name — its surviving pages are
+numbered 014 and 015 of roughly 32, so it was missing the front of the comic as well as the
+back. That is worse than the broken original, which at least failed openly. It has been
+reverted. **Decision: the seven are re-downloaded, not salvaged.**
+
+Pinned by four tests in `tests/test_repack.py`, including the one that matters most — that a
+genuinely truncated file is *not* flagged, since a false positive here sends a recoverable
+comic to the re-download list.
+
+The lesson is narrower than §10.11's and worth stating separately: knowing that a tool's
+silence is not evidence does not protect you from believing its *numbers*. A partial result
+is a limit reported as a measurement, and it looks exactly like a measurement.
 
 ---
 
