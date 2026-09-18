@@ -61,35 +61,74 @@ handing the whole job to an agent, are further down the file.
 
 ## Prompt for an agent
 
+**Give Cowork one folder: `/mnt/extramedia/_incoming/`.** Not
+`/mnt/extramedia/Comics/` — that is the library itself, 29,000 files, and the
+first rule of the job is not to write there. `_incoming` holds nothing but
+`CHECKLIST.md`, a copy of this file, so the agent has everything it needs to
+read and nowhere it can do harm. Access it cannot be given is access it cannot
+misuse, which beats a rule asking it politely.
+
+Refresh the copy whenever this list changes:
+
+```sh
+cp /home/nesha/scripts/cp_downloads2comics/LIBRARY_REDOWNLOAD.md \
+   /mnt/extramedia/_incoming/CHECKLIST.md
+```
+
 Copy everything in the block below into Cowork. It is written to stand alone —
 it does not assume the agent has seen this conversation or knows the library.
 
 ````text
 I have 50 comic files that are damaged or are not comics at all. I want
-replacements downloaded. The full checklist is at:
+replacements downloaded. Your working folder is /mnt/extramedia/_incoming/ and
+the checklist is sitting in it:
 
-  /home/nesha/scripts/cp_downloads2comics/LIBRARY_REDOWNLOAD.md
+  /mnt/extramedia/_incoming/CHECKLIST.md
 
-Read it first. Every entry gives the exact filename and the exact path the
-replacement belongs at, in this shape:
+Read it first. Every entry looks like this:
 
   - [ ] **Ripcord 004 (2026) (Digital) (DR & Quinch-Empire).cbr** — 123 MB of HTML
     - belongs at `/mnt/extramedia/Comics/Ripcord/Ripcord 004 (...).cbr`
 
-The filenames are accurate — that is the one thing these broken files got
-right. The parenthesised tags at the end name the specific scene release
-(`(digital) (Son of Ultron-Empire)`, `(Digital Rip) (Hourman-DCP)` and so on).
-Prefer that exact release when you can find it; a different release of the same
-issue is acceptable, a different issue is not.
+**Search for the series and issue number only.** For the entry above, search for
+`Ripcord 004` — not the whole filename. The rest of it is packaging: `(2026)` is
+the year, `(Digital)` the source, and `(DR & Quinch-Empire)` the group that
+released it. Those tags describe one particular upload, and searching for them
+will find nothing or will find only that upload when any copy of the issue would
+have done.
+
+So, per entry:
+
+  - the words before the first bracket, plus the issue number, are the search
+  - everything from the first bracket onward is not
+
+A few entries are volumes or one-shots rather than numbered issues — for
+`Planet Atmos - Exordium v01 (2026) (digital) (Knight Ripper-Empire).cbr` search
+`Planet Atmos Exordium v01`, and for `Beautiful Killer (2002) (Fan-Made TPB).cbr`
+search `Beautiful Killer`. Same principle: the title and whatever distinguishes
+this book from the next one in the series, nothing more.
+
+**Any release of the right issue is fine.** I am not trying to re-acquire these
+specific uploads — I am trying to be able to read the comic. A different group's
+version of the same issue is a success. A different issue is not.
+
+**Keep whatever filename the download comes with.** Do not rename it to match
+the entry. If you fetch a different release and give it the old name, the tags in
+that name now describe a file they did not come from, and neither of us will
+spot it later. Record which entry each download satisfies instead — see rule 6.
 
 Rules, in order of how much I care:
 
-1. **Do not write anything into /mnt/extramedia/Comics.** Download into
-   /mnt/extramedia/_incoming/, recreating the same folder structure the
-   destination path shows. I will move them in myself after I have looked.
-2. **Do not delete or overwrite the broken originals.** They are still sitting
-   at the destination paths and I want them there until a replacement is
-   verified. If a download lands on top of one, you have made things worse.
+1. **Everything you write goes under /mnt/extramedia/_incoming/.** You should
+   not have access to anything else; if you find you do, do not use it. The
+   `belongs at` path in each entry starts `/mnt/extramedia/Comics/` — that is
+   where *I* will put the file later, not where you put it. Recreate the folder
+   structure under `_incoming` instead, so
+   `/mnt/extramedia/Comics/Ripcord/…` becomes `/mnt/extramedia/_incoming/Ripcord/…`.
+2. **The broken originals are still sitting at those `belongs at` paths, and I
+   want them there.** Until a replacement is verified, a damaged file is better
+   than no file. This is the reason for rule 1: a download landing on top of one
+   loses the only copy I have.
 3. **Verify every download before you tick it off.** Three of the four failure
    modes on this list produce a file of plausible size that is not a comic, so
    size alone proves nothing. For each file check:
@@ -101,16 +140,23 @@ Rules, in order of how much I care:
      download opens fine and fails on the last page.
    - it is not all zeros past some point. Seven on the list end in megabytes of
      NUL and still open.
-   `python3 -c "import sys;from PIL import Image;..."` or the repo's own
-   `matching_analysis_generator.page_count(path)` will do for the image check.
+   Python with Pillow will do: open the archive, decode every page with
+   `Image.open(p).load()`, and treat any exception as a failed download. `load()`
+   matters — `open()` alone only reads the header and will happily accept a
+   half-written page.
 4. **Rate-limit yourself.** Fourteen of these are damaged *because* a previous
    run hammered a server and saved the 429 responses. Whatever you use, put a
    delay between requests and stop on the first 429 rather than continuing and
    writing the refusals to disk.
-5. **Tick the checkbox** in LIBRARY_REDOWNLOAD.md for each file you verified,
-   and leave a note on any you could not find. Do not edit anything above the
-   line that reads "Everything below is hand-written" — a script regenerates
-   that part and your edits there will be lost.
+5. **Tick the checkbox** in `/mnt/extramedia/_incoming/CHECKLIST.md` for each
+   file you verified. That file is a working copy — edit it freely; I will
+   reconcile it against my own. Do not go looking for the original elsewhere on
+   the disk.
+6. **Write `/mnt/extramedia/_incoming/RESULTS.md` when you finish**, with one
+   line per entry: the entry name, the filename you actually downloaded, and
+   where it landed. For anything you could not find, say so and say what you
+   tried. That file is how I check your work, so it matters more than the
+   checkboxes.
 
 Budget: the broken originals total 2.6 GB, so expect roughly that much again.
 The volume has 93 GB free, which is plenty, but it is 98% full — if a download
