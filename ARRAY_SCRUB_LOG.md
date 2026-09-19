@@ -124,6 +124,28 @@ matter are `Reallocated_Sector_Ct`, `Current_Pending_Sector` and
 
 ---
 
+## How the reminder works
+
+This box has no `notify-send`, no `at` and no MTA, so cron's usual ways of
+reaching a person are all unavailable. The reminder is therefore split in two:
+cron raises a flag, and shell startup is what shows it.
+
+| piece | path |
+|---|---|
+| due date (data, not code) | `~/.config/array_scrub_due` |
+| daily check | `~/scripts/array_scrub_due.sh`, via user crontab at 09:00 |
+| flag it raises | `~/.array_scrub_due.flag` |
+| what displays it | a line in `~/.zshrc` |
+
+**After running a scrub, reset both:**
+
+```sh
+rm ~/.array_scrub_due.flag
+echo 2027-03-19 > ~/.config/array_scrub_due
+```
+
+The date lives in its own file so rescheduling never means editing the script.
+
 ## December checklist
 
 - [ ] Run the scrub — **2026-12-19** or thereabouts
