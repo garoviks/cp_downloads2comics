@@ -362,33 +362,61 @@ since been checked directly:
 | **UDMA CRC errors** | **0** | **0** |
 | Power-on hours | 71,234 (8.1 y) | 62,710 (7.2 y) |
 
-The mirror: `Cpy%Sync 100.00`, **0 mismatches**, health column empty.
-
 The reallocation counters say the media is intact today. **`UDMA_CRC_Error_Count`
 is the one that says something about 2022** — it is lifetime-cumulative and never
 resets, so zero across eight years is positive evidence that no SATA transfer to
 either drive has ever failed its checksum. A flaky cable or controller would have
 left a mark there, and did not.
 
-So the disk is cleared, and that is as far as the evidence reaches. SMART cannot
-see the events that would actually explain ten corrupted files inside one
-52-minute window — power lost mid-write, memory, or the downloader itself. The
-finding is *not the storage*, not *here is the cause*.
+A note on the normalised `VALUE` of 003 and 015 on power-on hours: it looks
+alarming and is not. That attribute has a threshold of 000, so it cannot trip.
+It counts age, not wear.
 
-Two caveats worth keeping, because both are absences of evidence rather than
-evidence:
+### The mirror disagrees with itself, in 96 places
 
-* `raid_mismatch_count` is only populated by a scrub. If `lvchange --syncaction
-  check vgextra/lvextra` has never been run, the 0 above means "not measured",
-  not "no mismatches". Worth running once — it is read-only, needs no free space,
-  and reads both 3.64 TB legs, so budget 7–10 hours on drives of this vintage.
+`raid_mismatch_count` reads 0 until a scrub populates it, so the first reading
+meant *not measured* rather than *no mismatches*. A full
+`lvchange --syncaction check vgextra/lvextra` has now been run — 3.64 TB, both
+legs, ~3.5 hours — and it does not come back clean:
 
-  If it comes back non-zero, **do not reach for `--syncaction repair`.** A RAID1
-  has two copies and no parity, so nothing in the array can tell which leg is
-  right; repair picks one by convention and writes it over the other, which is
-  as likely to overwrite the good copy as the bad one. A non-zero count is a
-  finding to think about, not a fault to clear.
-* The normalised `VALUE` of 003 and 015 on power-on hours looks alarming and is
-  not: that attribute has a threshold of 000, so it cannot trip. It counts age,
-  not wear. Eight years of spinning is still eight years, and neither drive owes
-  anything to anyone.
+```
+LV      Cpy%Sync SyncAction Mismatches
+lvextra 100.00   idle              768
+```
+
+768 is in 512-byte sectors, but md compares page-sized units and the kernel's own
+documentation warns the count "may be larger than the number of actual errors by
+a factor of the number of sectors in a page". 768 = 8 × 96, so read it as **96
+discrepancies of 4 KB, 384 KB in total** — about one sector in ten million.
+
+**This is the class of fault SMART structurally cannot report.** A drive that
+returns wrong bytes while believing them correct shows zero reallocated sectors,
+zero pending and zero CRC errors — exactly the table above. The scrub is the only
+thing in this stack that compares the two copies, which is why the counter was
+worth populating rather than assuming.
+
+Two explanations fit, and the evidence so far does not choose between them:
+
+1. **Silent corruption on one leg.** Bit rot that nothing else here can see.
+2. **Writes interrupted mid-flight.** Power lost between the two legs leaves them
+   permanently divergent until a scrub. This one is attractive because it is
+   already the best explanation for ten NUL-headed files inside a single
+   52-minute window in 2022 — one cause for both symptoms.
+
+**The absolute number is not the diagnostic. The change in it is.** A second scrub
+is what separates the two: still 768 means a scar from a past event that is not
+spreading; materially more means something is actively degrading and a drive
+needs replacing. One more reading answers a question the first cannot.
+
+**Do not run `--syncaction repair`.** There are two copies, no parity, and no
+checksums anywhere in this stack — not in the array, not in the filesystem — so
+nothing can identify the correct leg. Repair copies one over the other by
+convention and makes the disagreement permanent in whichever direction it
+happened to pick. It would also zero the counter, which looks like a fix and
+would destroy the only baseline the re-scrub depends on.
+
+Worth stating because it is counter-intuitive: **reading the library does not
+verify this.** md serves reads from one leg, so a file can be clean on the leg you
+read and corrupt on the other indefinitely. The risk is not today — it is that
+when one drive eventually dies, the survivor's copy becomes the only copy,
+whatever it holds.
