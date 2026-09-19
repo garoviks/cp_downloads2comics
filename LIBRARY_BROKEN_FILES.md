@@ -377,7 +377,8 @@ It counts age, not wear.
 `raid_mismatch_count` reads 0 until a scrub populates it, so the first reading
 meant *not measured* rather than *no mismatches*. A full
 `lvchange --syncaction check vgextra/lvextra` has now been run — 3.64 TB, both
-legs, ~3.5 hours — and it does not come back clean:
+legs, **8 h 13 m** (08:46:01 to 16:59:42 on 2026-09-19, per `dmesg -T`) — and it
+does not come back clean:
 
 ```
 LV      Cpy%Sync SyncAction Mismatches
@@ -407,6 +408,10 @@ Two explanations fit, and the evidence so far does not choose between them:
 is what separates the two: still 768 means a scar from a past event that is not
 spreading; materially more means something is actively degrading and a drive
 needs replacing. One more reading answers a question the first cannot.
+
+Scheduled for **2026-12-19**. The commands, the drive baseline to compare against
+and the running results table are in
+[`ARRAY_SCRUB_LOG.md`](ARRAY_SCRUB_LOG.md).
 
 **Do not run `--syncaction repair`.** There are two copies, no parity, and no
 checksums anywhere in this stack — not in the array, not in the filesystem — so
