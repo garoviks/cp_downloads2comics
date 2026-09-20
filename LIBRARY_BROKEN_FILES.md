@@ -181,8 +181,10 @@ first surviving page is named `pg014`, so it is missing the *front* of the comic
 as well as the back: two readable pages, numbered 14 and 15, out of roughly 32.
 It was rescued before the check existed, which put a 2-page file into the library
 under the full issue's name — worse than the broken original, which at least
-failed openly. **It has been reverted**; the original is back in place and the
-fragment is parked at `/tmp/anna_mercury_001_fragment.cbz`.
+failed openly. **It has been reverted**: the original `.cbr` is back in place,
+unmodified and still carrying its 2022 timestamp, and the fragment has been
+deleted. Nothing was lost in either direction — the fragment held only pages the
+original still holds.
 
 `repack_comics.py` now refuses these by default, naming the damage as the
 reason, and `--salvage-fragments` overrides it for a caller who wants the pages
