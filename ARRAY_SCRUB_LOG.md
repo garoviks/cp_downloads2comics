@@ -133,9 +133,17 @@ cron raises a flag, and shell startup is what shows it.
 | piece | path |
 |---|---|
 | due date (data, not code) | `~/.config/array_scrub_due` |
-| daily check | `~/scripts/array_scrub_due.sh`, via user crontab at 09:00 |
+| daily check | `array_scrub_due.sh` in this repo, via user crontab at 09:00 |
+| crontab entry | `array_scrub_cron.txt` in this repo |
 | flag it raises | `~/.array_scrub_due.flag` |
 | what displays it | a line in `~/.zshrc` |
+
+Only the first, fourth and fifth live outside the repo. Reinstall the crontab
+after any change to `array_scrub_cron.txt`:
+
+```sh
+crontab ~/scripts/cp_downloads2comics/array_scrub_cron.txt
+```
 
 **After running a scrub, reset both:**
 

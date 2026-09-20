@@ -1,0 +1,4 @@
+# Raise a flag when the RAID1 scrub on vgextra/lvextra falls due.
+# Due date lives in ~/.config/array_scrub_due.
+# Background and commands: ~/scripts/cp_downloads2comics/ARRAY_SCRUB_LOG.md
+0 9 * * * /home/nesha/scripts/cp_downloads2comics/array_scrub_due.sh
