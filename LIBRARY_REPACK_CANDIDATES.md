@@ -1,6 +1,6 @@
 # Library repack candidates
 
-Read-only sweep of `/mnt/extramedia/Comics` — 29,515 archives, 3613.8 GB, 2,733,120 pages.
+Read-only sweep of `/mnt/extramedia/Comics` — 29,487 archives, 3611.1 GB, 2,733,409 pages.
 
 Every comic in the library should open in QComicBook. These are the ones that will not. Nothing here has been changed.
 
@@ -8,11 +8,11 @@ Every comic in the library should open in QComicBook. These are the ones that wi
 
 | Defect | Files | Size | Pages | Why it matters |
 |---|---:|---:|---:|---|
-| 7z or tar container | 20 | 1.0 GB | 161 | QComicBook will not open these. Repack as zip. |
-| Nested archives | 15 | 3.5 GB | 3,767 | A wrapper, not a book. Unpack one level. |
-| **Distinct files affected** | **35** | **4.5 GB** | **3,928** | A file can carry more than one defect. |
+| 7z or tar container | 0 | 0.0 GB | 0 | QComicBook will not open these. Repack as zip. |
+| Nested archives | 16 | 3.6 GB | 3,864 | A wrapper, not a book. Unpack one level. |
+| **Distinct files affected** | **16** | **3.6 GB** | **3,864** | A file can carry more than one defect. |
 
-That is 0.12% of the library by count and 0.13% by size.
+That is 0.05% of the library by count and 0.10% by size.
 
 **Page format is not on that list, and that is a correction.** An earlier version of this sweep counted 206 files as defective for holding WebP, GIF or BMP pages. They are not. Once the eight 7z books were repacked as plain zip, QComicBook read their 443 WebP pages without complaint — the container was the whole problem, and the page format was never part of it. All 206 of those files are already in zip or rar containers, so they need nothing. They are still listed further down, as information rather than as work.
 
@@ -20,49 +20,19 @@ That is 0.12% of the library by count and 0.13% by size.
 
 | Container | Files | Size |
 |---|---:|---:|
-| rar | 20,530 | 2232.0 GB |
-| zip | 8,939 | 1380.1 GB |
-| tar | 19 | 0.8 GB |
-| unknown | 16 | 0.0 GB |
-| not-an-archive | 8 | 0.6 GB |
-| ace | 2 | 0.1 GB |
-| 7z | 1 | 0.2 GB |
+| rar | 20,521 | 2230.2 GB |
+| zip | 8,943 | 1380.1 GB |
+| not-an-archive | 23 | 0.8 GB |
 
 `unreadable` means the file claims to be an archive and would not open, so nothing is asserted about what is inside it — that is not the same as being empty. `not-an-archive` means no archive format was found at all, which is a definite answer.
 
 ## 1. 7z and tar containers — repack as zip
 
-**20 files, 1.0 GB, 161 pages**
-
-| Format | Files |
-|---|---:|
-| tar | 19 |
-| 7z | 1 |
+**0 files, 0.0 GB, 0 pages**
 
 Largest first.
 
-| Size | Pages | Container | Path |
-|---:|---:|---|---|
-| 210 MB | 0 | tar | `Jungle.../Jungle Fantasy - Survivors (001-010)(2017-2018)(digital)(600dpi)(Minutemen-Excelsior)/Jungle Fantasy - Survivors 007 (2017) (digital) (600dpi) (Minutemen-Excelsior).cbz` |
-| 199 MB | 161 | 7z | `3 Guns (2013) TPB.cbr` |
-| 195 MB | 0 | tar | `Jungle.../Jungle Fantasy - Survivors (001-010)(2017-2018)(digital)(600dpi)(Minutemen-Excelsior)/Jungle Fantasy - Survivors 002 (2017) (digital) (600dpi) (Minutemen-Excelsior).cbz` |
-| 177 MB | 0 | tar | `Jungle.../Jungle Fantasy - Survivors (001-010)(2017-2018)(digital)(600dpi)(Minutemen-Excelsior)/Jungle Fantasy - Survivors 004 (2017) (digital) (600dpi) (Minutemen-Excelsior).cbz` |
-| 26 MB | 0 | tar | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 002 (2009) (four covers) (Minutemen-DTs).cbz` |
-| 24 MB | 0 | tar | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 003 (2009) (three covers) (fixed) (Minutemen-DTs).cbz` |
-| 24 MB | 0 | tar | `Warren Ellis/1995/Marvel  2099/X men 2099/X men 2099 #24.cbr` |
-| 22 MB | 0 | tar | `Robotech (2018)/Robotech 022 (2019) (Digital) (Mephisto-Empire).cbr` |
-| 21 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(083) Ultimate X-Men #075.cbr` |
-| 17 MB | 0 | tar | `Warren Ellis/2008/Astonishing X-Men/Astonishing X-Men 040 (2011) (Minutemen-DTermined).cbr` |
-| 17 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(052) Ultimate X-Men #047.cbr` |
-| 17 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(092) Ultimate X-Men #084.cbr` |
-| 15 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(019) Ultimate X-Men #018.cbr` |
-| 14 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(077) Ultimate X-Men #069.cbr` |
-| 14 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(086) Ultimate X-Men #078.cbr` |
-| 14 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(041) Ultimate X-Men #036.cbr` |
-| 13 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(097) Ultimate X-Men #089.cbr` |
-| 11 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(059) Ultimate X-Men #054.cbr` |
-| 5 MB | 0 | tar | `Grant Morrison/Comics/Ultimate X-Men/(042) Ultimate X-Men #037.cbr` |
-| 1 MB | 0 | tar | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 002 (Auxiliary Cover Only) (2009) (Steam-DCP).cbr` |
+_None._
 
 ## 2. Pages that are not JPEG or PNG — nothing to do
 
@@ -137,7 +107,7 @@ Largest first, top 50 of 206.
 
 ## 3. Nested archives — a wrapper, not a book
 
-**15 files, 3.5 GB, 3,767 pages**
+**16 files, 3.6 GB, 3,864 pages**
 
 These hold other comic archives as members. A reader opening one sees no pages. Note the page count column: where it is 0 the file is purely a wrapper, and where it is not the archive is a mixture.
 
@@ -151,6 +121,7 @@ Largest first.
 | 220 MB | 142 | 1 | `Robert Kirkman/Oblivion Song (Kirkman 2018)/Oblivion Song v05 (2021) (Digital) (DrDoom-Empire).cbz` |
 | 214 MB | 406 | 1 | `Hombre series (Ortiz, Jos).cbr` |
 | 128 MB | 563 | 34 | `Insufferable/Insufferable v1 (01-34) (2012)/Insufferable v1 (01-34) (2012).cbz` |
+| 109 MB | 97 | 1 | `Luis Royo/Luis Royo - Subversive Beauty & Portfolio.cbr` |
 | 74 MB | 50 | 1 | `Jodorowsky and Moebius/Blueberry/YOUNG BLUEBERRY (01-04)/Young Blueberry 02 - A Yankee Named Blueberry.cbr` |
 | 73 MB | 101 | 1 | `Heavy Metal/Heavy Metal Vols 01-35 (1977-2012)/Heavy Metal v03 02 (1979-06) (glitch-DCP).cbr` |
 | 39 MB | 146 | 1 | `Heavy Metal/02. Specials/Heavy Metal Special Edition v08 02 (1994) (Greatest Hits) (Humperdido).cbr` |
@@ -185,37 +156,27 @@ Largest first.
   - `Insufferable 007 (2012) (Mark Waid, digital).cbz`
   - `Insufferable 008 (2012) (Mark Waid, digital).cbz`
   - _…and 26 more_
+- `Luis Royo/Luis Royo - Subversive Beauty & Portfolio.cbr` — 1 archive members, 97 loose pages
+  - `Luis Royo - Subversive Beauty & Portfolio 2005 Jam XP/The!Checker.zip`
 - `Jodorowsky and Moebius/Blueberry/YOUNG BLUEBERRY (01-04)/Young Blueberry 02 - A Yankee Named Blueberry.cbr` — 1 archive members, 50 loose pages
   - `La_jeunesse_de_02-Un_Yankee_nomme_Blueberry/19 Young Blueberry 02_-_A_Yankee_Named_Blueberrya.cbr`
 - `Heavy Metal/Heavy Metal Vols 01-35 (1977-2012)/Heavy Metal v03 02 (1979-06) (glitch-DCP).cbr` — 1 archive members, 101 loose pages
   - `Heavy Metal v03 02 (June 79).cbr`
 - `Heavy Metal/02. Specials/Heavy Metal Special Edition v08 02 (1994) (Greatest Hits) (Humperdido).cbr` — 1 archive members, 146 loose pages
   - `Heavy_Metal_Special_Edition_1994_#02_Greatest Hits.cbr`
-- `Image comics/Guarding the Globe v1 (001-006)(2010-2011)/Guarding the Globe 04 (of 06) (2011) (two covers) (Minutemen-TwiztiD-T).cbz` — 1 archive members, 25 loose pages
-  - `Guarding the Globe 04 (of 06) (2011) (two covers) (Minutemen-TwiztiD-T).cbz/`
 
 ## Not repack candidates, but worth knowing
 
-### 38 unreadable
+### 11 unreadable
 
 These claim to be archives and would not open. Nothing is claimed about their contents. They are a separate problem from repacking.
 
 | Size | Pages | Path |
 |---:|---:|---|
-| 589 MB | 0 | `Trigan Empire /The Rise and Fall of the Trigan Empire v02 (2020) (digital) (Mr Norrell-Empire).cbr` |
-| 457 MB | 0 | `Image comics/Carbon Grey/Carbon Grey - Omnibus (2016) GetComics.INFO.cbr` |
-| 438 MB | 0 | `Image comics/Lake of Fire (2017) (Digital) (XRA-Empire).cbz` |
-| 214 MB | 0 | `Jungle.../Jungle Fantasy - Survivors (001-010)(2017-2018)(digital)(600dpi)(Minutemen-Excelsior)/Jungle Fantasy - Survivors 001 (2017) (digital) (600dpi) (Minutemen-Excelsior).cbz` |
-| 103 MB | 0 | `Metal Hurlant Collection/Metal Hurlant Collection v02 p003 (2011) GetComics.INFO.cbr` |
-| 91 MB | 0 | `The Celestial Bibendum/The Celestial Bibendum 2 (Digital) (Humanoids).cbr` |
-| 71 MB | 0 | `Europe Comics (Collection)/Stern/Stern 02 - City of Savages _2018_ _Europe Comics_ _Digital-Empire_ (newcomic.info).cbr` |
-| 54 MB | 0 | `Spirou & Fantasio/Spirou & Fantasio 19 - Baby Fever in Champignac.cbr` |
 | 29 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 001 (2009) (Three Covers) (Minutemen-Shamil).cbr` |
 | 23 MB | 0 | `Grant Morrison/Comics/Doom Patrol/Doom Patrol 04.cbr` |
 | 17 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(093) Ultimate X-Men #085.cbr` |
 | 15 MB | 0 | `Enders Game/2    Mazer in Prison/Mazer in Prison (Comic).cbr` |
-| 15 MB | 0 | `Aria (Collection) GetComics.INFO/Aria 07 - A Murder of Crows (Ringoscann).cbr` |
-| 14 MB | 0 | `The Celestial Bibendum/The Celestial Bibendum 3 (Digital) (Humanoids).cbr` |
 | 13 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(098) Ultimate X-Men #090.cbr` |
 | 12 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(087) Ultimate X-Men #079.cbr` |
 | 11 MB | 0 | `Ted McKeever (Collection) (1987-2007)/1995 - Engines (DC Legends of the Dark Knight 74-75)/Legends of the Dark Knight 074.cbz` |
@@ -223,25 +184,8 @@ These claim to be archives and would not open. Nothing is claimed about their co
 | 5 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(043) Ultimate X-Men #038.cbr` |
 | 5 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(020) Ultimate X-Men #019.cbr` |
 | 3 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(001) Ultimate X-Men #00½.cbr` |
-| 2 MB | 0 | `Europe Comics (Collection)/Where is Kiki (Europe Comics 2020) (webrip) (MagicMan-DCP).cbr` |
-| 0 MB | 0 | `Alix Senator  (2012-2020)/Alix Senator v08 - The City of Poisons (2018) (Scanlation) (phillywilly).cbr` |
-| 0 MB | 0 | `All Night & Every Day (2022) (digital) (Son of Ultron-Empire).cbr` |
-| 0 MB | 0 | `Beautiful Killer (2002) (Fan-Made TPB).cbr` |
-| 0 MB | 0 | `Dwellings (2023)/Dwellings - All Hallows' Eve Special 01 (2024) (Digital Rip) (Hourman-DCP).cbr` |
-| 0 MB | 0 | `Firefly/Firefly 20th Anniversary Special 001.cbr` |
-| 0 MB | 0 | `Frankenstein - New World - The Speed of Darkness/Frankenstein - New World - The Speed of Darkness 004 (2026) (digital) (Son of Ultron-Empire).cbr` |
-| 0 MB | 0 | `Hello Darkness (2024)/Hello Darkness 022 (2026) (Digital Rip) (Hourman-DCP).cbr` |
-| 0 MB | 0 | `Honor and Curse Eternal/Honor and Curse Eternal 004 (2026) (2 covers) (digital) (Knight Ripper-Empire).cbr` |
-| 0 MB | 0 | `Murder Drones/Murder Drones 05 (of 06) (2026) (Digital Rip) (Hourman-DCP).cbr` |
-| 0 MB | 0 | `Murder Podcast/Murder Podcast 007 (2026) (Digital) (DR & Quinch-Empire).cbr` |
-| 0 MB | 0 | `Planet Atmos - Exordium/Planet Atmos - Exordium v01 (2026) (digital) (Knight Ripper-Empire).cbr` |
-| 0 MB | 0 | `Red Roots/Red Roots 004 (2026) (Digital) (Mephisto-Empire).cbr` |
-| 0 MB | 0 | `Ripcord/Ripcord 004 (2026) (Digital) (DR & Quinch-Empire).cbr` |
-| 0 MB | 0 | `Star Trek/Star Trek - Strange New Worlds - The Seeds of Salvation (2026) (digital) (The Magicians-Empire).cbr` |
-| 0 MB | 0 | `The Living Corpse Omnibus Vol. 1 (2007).cbr` |
-| 0 MB | 0 | `White Sky/White Sky 005 (2026) (Digital) (Mephisto-Empire).cbr` |
 
-### 8 not archives at all
+### 23 not archives at all
 
 No archive format found. Definitely holds no comic.
 
@@ -249,8 +193,23 @@ No archive format found. Definitely holds no comic.
 |---:|---:|---|
 | 392 MB | 0 | `Americatown (2016) (digital) (d'argh-Empire).cbr` |
 | 115 MB | 0 | `Marvel Noir (2009-2011)(digital)/X-Men Noir (2009) (Digital) (Kileko-Empire).cbr` |
-| 59 MB | 0 | `A Quiet Place - Storm Warning/A Quiet Place - Storm Warning 004 (2026) (digital) (Son of Ultron-Empire).cbr` |
 | 31 MB | 0 | `James Bond (2016)/James Bond - 007 005 (2022) (4 covers) (digital) (Son of Ultron-Empire).cbr` |
+| 26 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 002 (2009) (four covers) (Minutemen-DTs).cbz` |
+| 24 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 003 (2009) (three covers) (fixed) (Minutemen-DTs).cbz` |
+| 24 MB | 0 | `Warren Ellis/1995/Marvel  2099/X men 2099/X men 2099 #24.cbr` |
+| 22 MB | 0 | `Robotech (2018)/Robotech 022 (2019) (Digital) (Mephisto-Empire).cbr` |
+| 21 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(083) Ultimate X-Men #075.cbr` |
+| 17 MB | 0 | `Warren Ellis/2008/Astonishing X-Men/Astonishing X-Men 040 (2011) (Minutemen-DTermined).cbr` |
+| 17 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(052) Ultimate X-Men #047.cbr` |
+| 17 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(092) Ultimate X-Men #084.cbr` |
+| 15 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(019) Ultimate X-Men #018.cbr` |
+| 14 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(077) Ultimate X-Men #069.cbr` |
+| 14 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(086) Ultimate X-Men #078.cbr` |
+| 14 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(041) Ultimate X-Men #036.cbr` |
+| 13 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(097) Ultimate X-Men #089.cbr` |
+| 11 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(059) Ultimate X-Men #054.cbr` |
+| 5 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(042) Ultimate X-Men #037.cbr` |
+| 1 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 002 (Auxiliary Cover Only) (2009) (Steam-DCP).cbr` |
 | 0 MB | 0 | `Floyd_Farland_Citizen_of_the_Future/Floyd_Farland_Citizen_of_the_Future.cbz` |
 | 0 MB | 0 | `Greg Rucka/The Death of Stalin 001 - Agony (2016) (Europe Comics) (digital) (Lynx-Empire).cbr` |
 | 0 MB | 0 | `I'm a Lost Angel/I'm a Lost Angel (2026) (Digital) (Dipole-Empire).cbz` |

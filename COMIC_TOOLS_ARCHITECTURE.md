@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **275 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **278 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -1967,6 +1967,65 @@ The general point: "it only adds data where we had none" is a claim about the me
 about the data. Here the mechanism was sound and the change was still wrong, and no amount
 of reasoning about `unar`'s tolerance would have shown that. Only looking at the nine files
 did.
+
+### 10.14 A block of NUL bytes is a valid empty tar
+
+The Phase 2 sweep finished — 29,487 archives, 176 minutes — and reported **16 tar containers
+holding 0 pages**, under a heading that reads *repack as zip*. Sixteen files, three-tenths of
+a gigabyte, not one page between them. A tar-wrapped comic is unusual but real; sixteen
+tar-wrapped comics that are all empty is not a library, it is a detector talking to itself.
+
+`detect_container()` finished with:
+
+```python
+if tarfile.is_tarfile(path):
+    return 'tar'
+```
+
+A tar archive legitimately *ends* in two 512-byte blocks of NUL. A file that is nothing but
+NULs therefore satisfies every structural test `is_tarfile()` makes: it is a structurally
+valid tar containing no members. All 16 are the NUL-headed damaged group already itemised in
+`LIBRARY_BROKEN_FILES.md` and already on the re-download list — `X men 2099 #24.cbr` opens
+with 4 MB of zeros, `Robotech 022` is 22 MB of them end to end.
+
+Had the report been acted on, the repack would have read 16 archives, found 0 pages in each,
+and written 16 empty `.cbz` files wearing full issue names — over the top of the originals'
+place in the library, and with nothing in the resulting file to say what had happened.
+
+The fix asks the format for contents instead of for a header:
+
+```python
+def tar_has_members(path: Path) -> bool:
+    try:
+        with tarfile.open(path) as tar:
+            return tar.next() is not None
+    except (tarfile.TarError, OSError):
+        return False
+```
+
+`TarError` has to be caught in the helper: `detect_container()` guards only `OSError`, and
+`tarfile.ReadError` is not one.
+
+Recovery was cheap because the bug is one-directional. It can only *invent* tars, never hide
+another format, so every other line in the 6.9 MB scratch file is unaffected — re-inspecting
+the 16 files, patching their lines, and re-rendering took seconds against a three-hour
+re-walk. All 16 now classify `not-an-archive`, which is the true answer: no archive format is
+present in them at all. The defect table's first row goes 16 → **0**, and the whole of Phase 2
+is now 16 nested archives and nothing else.
+
+**This is the fourth time in this codebase that a stdlib or CLI detector was believed without
+being asked for contents.** `zipfile.is_zipfile()` scans backwards from EOF and so mislabels
+an archive that merely *contains* a `.zip` (§10.11). `unrar` as the sole RAR reader called
+files unreadable that `7z` opens (§10.11 again). A lister's page count was read as the book's
+page count when the lister had stopped at the damage (§10.12). And now `is_tarfile()` on a
+file of zeros.
+
+The shape is identical every time: **a format test answers "could this be parsed as X", not
+"is this an X".** On a healthy library the two coincide, which is why the fault keeps landing
+— it is invisible until the input is damaged, and this library's damaged files are precisely
+the ones these tools exist to find. Three new tests pin it, including one asserting a genuine
+single-member tar is still detected, because the tempting over-correction is to drop tar
+support altogether and call the false positive fixed.
 
 ---
 

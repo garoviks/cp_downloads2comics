@@ -46,6 +46,14 @@ def load_release():
     return release
 
 
+def load_sweep():
+    """Import sweep_archive_formats — the read-only library format survey."""
+    if GENERATOR_DIR not in sys.path:
+        sys.path.insert(0, GENERATOR_DIR)
+    import sweep_archive_formats
+    return sweep_archive_formats
+
+
 def load_duplicates():
     """Import duplicates — the shared 'are these the same book' rules."""
     if GENERATOR_DIR not in sys.path:

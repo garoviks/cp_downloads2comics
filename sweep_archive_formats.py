@@ -56,6 +56,25 @@ NESTED_EXTS = {'.cbr', '.cbz', '.cb7', '.zip', '.rar', '.7z'}
 SCRATCH = Path('/tmp/archive_format_sweep.jsonl')
 
 
+def tar_has_members(path: Path) -> bool:
+    """Whether a file `tarfile` accepts actually contains anything.
+
+    `is_tarfile()` on its own is not a container test. A tar archive
+    legitimately *ends* in two 512-byte blocks of NUL, so a file that is nothing
+    but NUL bytes is a structurally valid empty tar and `is_tarfile()` says yes.
+    Sixteen NUL-headed damaged comics were classified `tar` on exactly that
+    basis and listed here as repack work; repacking them would have produced
+    sixteen empty .cbz files wearing comic names.
+
+    A container holding no members is not that format, whatever its header says.
+    """
+    try:
+        with tarfile.open(path) as tar:
+            return tar.next() is not None
+    except (tarfile.TarError, OSError):
+        return False
+
+
 def detect_container(path: Path):
     """Which archive format this file actually is, read from its bytes.
 
@@ -83,7 +102,7 @@ def detect_container(path: Path):
             return '7z'
         if head[7:].startswith(gen.ACE_MAGIC):
             return 'ace'
-        if tarfile.is_tarfile(path):
+        if tarfile.is_tarfile(path) and tar_has_members(path):
             return 'tar'
     except OSError:
         return None
