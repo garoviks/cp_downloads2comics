@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **280 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **282 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -2059,6 +2059,66 @@ and nothing about that answer invited a second look. **A wrong answer that looks
 category rather than an error does not get re-examined** — which is the practical cost of
 letting "empty" and "unreadable" share a value, and the reason the distinction was written
 into this function in the first place.
+
+### 10.15 A member's name is not its type
+
+With the tar row zeroed, Phase 2 was **16 nested archives and nothing else** — so the next
+question was what "unpack the nested archives" would actually do. Measuring all 16 turned up
+the same fault a fifth time, one line further along:
+
+```python
+elif suffix in NESTED_EXTS:
+    nested.append(name)
+```
+
+Comic archives routinely contain a *folder* named after the release —
+`Herogasm 06 (of 06) (2009) (Minutemen-Molotov).cbz/` holding the pages — and that folder's
+name ends in `.cbz`. **Eight of the sixteen were folders.** The remaining 43 member entries
+across the other eight files are real nested archives.
+
+Half of them were visible all along and half were not, which is what made it hard to see. A
+zip listing keeps the trailing slash, so `Oblivion Song v05 (...).cbz/` at least looked odd;
+`unrar lb` prints directory names bare, so `Heavy Metal v03 02 (June 79).cbr` was
+indistinguishable from a genuine nested RAR. 7z's `-slt` listing reports `Attributes` with a
+`D` for a directory in either format, so it is the one tool that answers for both:
+
+```python
+if name and attrs and attrs.split('_')[0].strip().startswith('D'):
+    folders.add(name.rstrip('/'))
+```
+
+The `split('_')[0]` matters. 7z writes attributes as `D`, `Dn`, `D_ drwxr-xr-x` or `A`, `An`,
+`_ -rw-r--r--`; the `d` in the unix string after the underscore is a different alphabet and
+reading it would misfire on any file whose permission string it happened to match. A member
+7z cannot describe at all is *kept* — no evidence is not evidence of a directory, and dropping
+a real nested archive is the worse error of the two. The 7z call is only paid for when a
+candidate already exists, which is 16 files in 29,487.
+
+Two tests pin it, and the second is the point: the over-correction here is to drop everything
+that looks nested and declare the false positives fixed.
+
+**What the eight survivors actually hold**, measured rather than assumed:
+
+- **Five are a duplicate or a stray**: `Deadline v01` (`New folder.rar`, 21 pages, 0 new),
+  `Wake - Parts 11-15` (49 pages, 0 new), `Insufferable v1` (34 nested `.cbz`, 562 pages,
+  0 new), `Evelina & Violet White - Pam` (9 pages, 0 new), and `Luis Royo` — whose nested
+  member is `The!Checker.zip`, the same DOS utility from §10.11, 0 pages. Roughly **465 MB of
+  duplicated bytes**, and no reason to touch any of them.
+- **Three hold pages not otherwise visible**: `Young Blueberry 02` (**10 new pages**),
+  `Monstress v09` (**1 new page in each of 3 issues**), and `Hombre series (Ortiz, Jos).cbr`,
+  which carries `Morea - T04 - Un parfum d'éternité.rar` — **52 pages, all 52 new, a
+  different comic entirely** filed inside an unrelated one.
+
+The comparison is **by filename, not by bytes**; two files called `012.jpg` are assumed to be
+the same page. That is the right default for detecting duplication and the wrong one for
+proving it, and it is stated here because the difference decides whether 465 MB is safe to
+ignore.
+
+The report's own framing was wrong too, and was rewritten. It said *"A wrapper, not a book. A
+reader opening one sees no pages."* **That is false for all sixteen** — every one of them has
+loose pages of its own and opens perfectly well. The nested archive is invisible to a reader,
+which is a different and much smaller claim, and turning it into work for 13 files that needed
+none is how a diagnostic loses its reader's trust.
 
 ---
 

@@ -9,10 +9,10 @@ Every comic in the library should open in QComicBook. These are the ones that wi
 | Defect | Files | Size | Pages | Why it matters |
 |---|---:|---:|---:|---|
 | 7z or tar container | 0 | 0.0 GB | 0 | QComicBook will not open these. Repack as zip. |
-| Nested archives | 16 | 3.6 GB | 3,864 | A wrapper, not a book. Unpack one level. |
-| **Distinct files affected** | **16** | **3.6 GB** | **3,864** | A file can carry more than one defect. |
+| Nested archives | 8 | 3.2 GB | 3,329 | Invisible to a reader. Check whether the pages are already outside. |
+| **Distinct files affected** | **8** | **3.2 GB** | **3,329** | A file can carry more than one defect. |
 
-That is 0.05% of the library by count and 0.10% by size.
+That is 0.03% of the library by count and 0.09% by size.
 
 **Page format is not on that list, and that is a correction.** An earlier version of this sweep counted 206 files as defective for holding WebP, GIF or BMP pages. They are not. Once the eight 7z books were repacked as plain zip, QComicBook read their 443 WebP pages without complaint — the container was the whole problem, and the page format was never part of it. All 206 of those files are already in zip or rar containers, so they need nothing. They are still listed further down, as information rather than as work.
 
@@ -106,11 +106,13 @@ Largest first, top 50 of 206.
 | 59 MB | 96 | gif | `2000AD prog/2000AD (Specials, Annuals & Poster Progs + Extras)/2000AD Yearbooks & Specials (1977 - 2013)/Specials (-JJ-)/Best of 2000AD Special Edition 1999.cbr` |
 | … | … | … | _…and 156 more, see the total above_ |
 
-## 3. Nested archives — a wrapper, not a book
+## 3. Nested archives — an archive carried inside a comic
 
-**16 files, 3.6 GB, 3,864 pages**
+**8 files, 3.2 GB, 3,329 pages**
 
-These hold other comic archives as members. A reader opening one sees no pages. Note the page count column: where it is 0 the file is purely a wrapper, and where it is not the archive is a mixture.
+These hold another comic archive as a member. A reader shows images and ignores everything else, so whatever is inside the nested archive is invisible to it.
+
+**This is not automatically work.** Every file here also has loose pages of its own and opens perfectly well; the question is only whether the nested archive holds pages that are not already among them. Usually it does not — it is the same pages a second time, or a stray utility that came with the scan. Check before unpacking anything, and compare the nested pages against the loose ones.
 
 Largest first.
 
@@ -119,21 +121,13 @@ Largest first.
 | 1.30 GB | 1773 | 1 | `Deadline magazine (1988-1990)/Deadline v01.cbz` |
 | 767 MB | 188 | 3 | `Monstress/Monstress v09 - The Possessed (2024).cbz` |
 | 572 MB | 242 | 1 | `Wake/Wake - Parts 11-15 (2008-2012).cbr` |
-| 220 MB | 142 | 1 | `Robert Kirkman/Oblivion Song (Kirkman 2018)/Oblivion Song v05 (2021) (Digital) (DrDoom-Empire).cbz` |
 | 214 MB | 406 | 1 | `Hombre series (Ortiz, Jos).cbr` |
 | 128 MB | 563 | 34 | `Insufferable/Insufferable v1 (01-34) (2012)/Insufferable v1 (01-34) (2012).cbz` |
 | 109 MB | 97 | 1 | `Luis Royo/Luis Royo - Subversive Beauty & Portfolio.cbr` |
 | 74 MB | 50 | 1 | `Jodorowsky and Moebius/Blueberry/YOUNG BLUEBERRY (01-04)/Young Blueberry 02 - A Yankee Named Blueberry.cbr` |
-| 73 MB | 101 | 1 | `Heavy Metal/Heavy Metal Vols 01-35 (1977-2012)/Heavy Metal v03 02 (1979-06) (glitch-DCP).cbr` |
-| 39 MB | 146 | 1 | `Heavy Metal/02. Specials/Heavy Metal Special Edition v08 02 (1994) (Greatest Hits) (Humperdido).cbr` |
-| 28 MB | 25 | 1 | `Image comics/Guarding the Globe v1 (001-006)(2010-2011)/Guarding the Globe 04 (of 06) (2011) (two covers) (Minutemen-TwiztiD-T).cbz` |
-| 17 MB | 27 | 1 | `Hellboy/6.)  Sir Edward Grey, Witchfinder - In the Service of Angels #1-5  (1879 AD)/Sir Edward Grey, Witchfinder - In the Service of Angels #5.cbz` |
-| 17 MB | 27 | 1 | `Sir Edward Grey, Witchfinder (Collection) (2009-2014) GetComics.INFO/1- In the Service of Angels (001-005)(2009)(Minutemen-InnerDemons+DTs)/scans/Witchfinder - In the Service of Angels 05 (of 5) (2009) (F) (Minutemen-DTs).cbz` |
-| 17 MB | 24 | 1 | `Garth Ennis Collection/The Boys/Herogasm/Herogasm 06.cbr` |
-| 14 MB | 43 | 1 | `Judge Dredd The Megazine/Judge Dredd Megazine v2 (001-083)(1992-1995)/Judge Dredd Megazine v2 008 (1992) (c2c) (Youngstar).cbr` |
 | 5 MB | 10 | 1 | `SleepyGimp - Evelina & Nancy Templeton (ADULT)/24. (Short) Evelina & Violet White - Pam.cbz` |
 
-### What the largest wrappers contain
+### What the nested archives contain
 
 - `Deadline magazine (1988-1990)/Deadline v01.cbz` — 1 archive members, 1773 loose pages
   - `18_Deadline 016 [1990 March](FIXED)(S23-ScAndy)/New folder.rar`
@@ -143,8 +137,6 @@ Largest first.
   - `Monstress 054 (2024) (digital) (Goobadaddy-Empire).cbz`
 - `Wake/Wake - Parts 11-15 (2008-2012).cbr` — 1 archive members, 242 loose pages
   - `2010 Wake 13 - Powerslide (Ouash) (Retranslation)/Wake 13 - Powerslide (Ouash) (Retranslation).cbr`
-- `Robert Kirkman/Oblivion Song (Kirkman 2018)/Oblivion Song v05 (2021) (Digital) (DrDoom-Empire).cbz` — 1 archive members, 142 loose pages
-  - `Oblivion Song v05 (2021) (Digital) (DrDoom-Empire).cbz/`
 - `Hombre series (Ortiz, Jos).cbr` — 1 archive members, 406 loose pages
   - `Ortiz, José - Hombre series (JJ_O&S_hombre2)/1992 Hombre 4 Attila and the Seven Dwarves (JJ_O&S_hombre4)/Morea - T04 - Un parfum d'éternité.rar`
 - `Insufferable/Insufferable v1 (01-34) (2012)/Insufferable v1 (01-34) (2012).cbz` — 34 archive members, 563 loose pages
@@ -161,10 +153,8 @@ Largest first.
   - `Luis Royo - Subversive Beauty & Portfolio 2005 Jam XP/The!Checker.zip`
 - `Jodorowsky and Moebius/Blueberry/YOUNG BLUEBERRY (01-04)/Young Blueberry 02 - A Yankee Named Blueberry.cbr` — 1 archive members, 50 loose pages
   - `La_jeunesse_de_02-Un_Yankee_nomme_Blueberry/19 Young Blueberry 02_-_A_Yankee_Named_Blueberrya.cbr`
-- `Heavy Metal/Heavy Metal Vols 01-35 (1977-2012)/Heavy Metal v03 02 (1979-06) (glitch-DCP).cbr` — 1 archive members, 101 loose pages
-  - `Heavy Metal v03 02 (June 79).cbr`
-- `Heavy Metal/02. Specials/Heavy Metal Special Edition v08 02 (1994) (Greatest Hits) (Humperdido).cbr` — 1 archive members, 146 loose pages
-  - `Heavy_Metal_Special_Edition_1994_#02_Greatest Hits.cbr`
+- `SleepyGimp - Evelina & Nancy Templeton (ADULT)/24. (Short) Evelina & Violet White - Pam.cbz` — 1 archive members, 10 loose pages
+  - `Pam/Pam.cbz`
 
 ## Not repack candidates, but worth knowing
 

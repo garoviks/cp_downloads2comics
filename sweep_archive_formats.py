@@ -8,8 +8,13 @@ Three defects, and a file can carry more than one:
   pages       pages stored as something other than JPEG or PNG. WebP is the
               one that matters; avif, jxl, gif, bmp and tif are reported too
               because we may as well know.
-  nested      the archive holds .cbr/.cbz/.cb7/.zip/.rar/.7z members. A
-              wrapper around other comics, which no reader opens as a book.
+  nested      the archive holds a .cbr/.cbz/.cb7/.zip/.rar/.7z *file* as a
+              member. A reader shows images and ignores everything else, so
+              whatever is inside it is invisible — which is not the same as
+              the file being unreadable, and usually not work: all of these
+              also carry loose pages and open fine. A member whose *name*
+              ends in an archive suffix is not enough; half the candidates
+              found this way were folders (see drop_directories).
 
 Read-only. Converts nothing, moves nothing, writes only its own report.
 
@@ -22,6 +27,7 @@ false alarms this sweep exists to avoid.
 Usage:  python3 sweep_archive_formats.py [library_root] [report_path]
 """
 import json
+import subprocess
 import sys
 import tarfile
 import time
@@ -114,6 +120,49 @@ def page_format(suffix: str) -> str:
     return 'jpeg' if suffix in JPEG_EXTS else suffix.lstrip('.')
 
 
+def drop_directories(path: Path, candidates: list) -> list:
+    """Of these member names, the ones that are actually files.
+
+    A member's name is not its type. Comic archives routinely contain a folder
+    named after the release — `Herogasm 06 (of 06) (2009) (Minutemen-Molotov)
+    .cbz/` — and a suffix test alone books that file as carrying a nested
+    archive. Eight of the sixteen candidates this sweep found were folders.
+
+    Half of them were visible all along and half were not, which is what made it
+    hard to see: a zip listing keeps the trailing slash, so `Oblivion Song v05
+    (...).cbz/` at least looked odd, while `unrar lb` prints directory names bare
+    and `Heavy Metal v03 02 (June 79).cbr` was indistinguishable from a real
+    nested RAR. 7z's `-slt` listing reports `Attributes` with a D for a folder in
+    either format, so it is the one tool that answers for both.
+
+    Only paid for when a candidate exists, which is 16 files in 29,487. A member
+    7z cannot describe is kept: no evidence is not evidence of a directory, and
+    dropping a real nested archive is the worse error of the two.
+    """
+    if not candidates:
+        return candidates
+    try:
+        out = subprocess.run(['7z', 'l', '-slt', str(path)], capture_output=True,
+                             text=True, timeout=1800).stdout
+    except (subprocess.SubprocessError, OSError):
+        return candidates
+    folders = set()
+    for block in out.split('\n\n'):
+        name = attrs = None
+        for line in block.splitlines():
+            if line.startswith('Path = '):
+                name = line[len('Path = '):]
+            elif line.startswith('Attributes = '):
+                attrs = line[len('Attributes = '):]
+        # 7z writes attributes as `D`, `Dn`, or `D_ drwxr-xr-x`, and a plain
+        # file as `A`, `An` or `_ -rw-r--r--`. The D that means directory is
+        # the first character of the first field; the `d` in the unix string
+        # after the underscore is a different alphabet and must not be read.
+        if name and attrs and attrs.split('_')[0].strip().startswith('D'):
+            folders.add(name.rstrip('/'))
+    return [c for c in candidates if c.rstrip('/') not in folders]
+
+
 def inspect(path: Path) -> dict:
     """Everything this sweep wants to know about one file, in one read."""
     try:
@@ -146,6 +195,7 @@ def inspect(path: Path) -> dict:
             formats[page_format(suffix)] += 1
         elif suffix in NESTED_EXTS:
             nested.append(name)
+    nested = drop_directories(path, nested)
     return {'path': str(path), 'size': size, 'status': 'read',
             'container': container or 'unknown', 'pages': sum(formats.values()),
             'formats': dict(formats), 'nested': nested}
@@ -235,7 +285,7 @@ def build_report(results, root: Path, report: Path, elapsed: float):
          f'| 7z or tar container | {len(repack)} | {gb(sum(r["size"] for r in repack)):.1f} GB '
          f'| {sum(r["pages"] for r in repack):,} | QComicBook will not open these. Repack as zip. |',
          f'| Nested archives | {len(nested)} | {gb(sum(r["size"] for r in nested)):.1f} GB '
-         f'| {sum(r["pages"] for r in nested):,} | A wrapper, not a book. Unpack one level. |',
+         f'| {sum(r["pages"] for r in nested):,} | Invisible to a reader. Check whether the pages are already outside. |',
          f'| **Distinct files affected** | **{len(affected)}** '
          f'| **{gb(sum(r["size"] for r in affected)):.1f} GB** '
          f'| **{sum(r["pages"] for r in affected):,}** | A file can carry more than one defect. |',
@@ -306,20 +356,27 @@ def build_report(results, root: Path, report: Path, elapsed: float):
     L += table(oddpages, root, extra='Page formats')
 
     # ---- Class 3 -----------------------------------------------------------
-    L += ['## 3. Nested archives — a wrapper, not a book',
+    L += ['## 3. Nested archives — an archive carried inside a comic',
           '',
           f'**{totals(nested)}**',
           '',
-          'These hold other comic archives as members. A reader opening one sees '
-          'no pages. Note the page count column: where it is 0 the file is purely '
-          'a wrapper, and where it is not the archive is a mixture.',
+          'These hold another comic archive as a member. A reader shows images '
+          'and ignores everything else, so whatever is inside the nested archive '
+          'is invisible to it.',
+          '',
+          '**This is not automatically work.** Every file here also has loose '
+          'pages of its own and opens perfectly well; the question is only '
+          'whether the nested archive holds pages that are not already among '
+          'them. Usually it does not — it is the same pages a second time, or a '
+          'stray utility that came with the scan. Check before unpacking '
+          'anything, and compare the nested pages against the loose ones.',
           '']
     for r in nested:
         r['_extra'] = str(len(r['nested']))
     L += [f'Largest first{f", top 50 of {len(nested)}" if len(nested) > 50 else ""}.', '']
     L += table(nested, root, extra='Archive members')
     if nested:
-        L += ['### What the largest wrappers contain', '']
+        L += ['### What the nested archives contain', '']
         for r in nested[:10]:
             L.append(f'- `{Path(r["path"]).relative_to(root)}` — '
                      f'{len(r["nested"])} archive members, {r["pages"]} loose pages')
