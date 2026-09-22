@@ -111,6 +111,27 @@ section is at byte 0, so there is no header left for a tolerant reader to use.
 | 0 MB | zero bytes — the file is empty | `Greg Rucka/The Death of Stalin 001 - Agony (2016) (Europe Comics) (digital) (Lynx-Empire).cbr` |
 | 0 MB | zero bytes — the file is empty | `Floyd_Farland_Citizen_of_the_Future/Floyd_Farland_Citizen_of_the_Future.cbz` |
 
+## 1 more, which was hiding behind a wrong answer
+
+| size | why | file |
+|---|---|---|
+| 6 MB | first 4 MB is NUL; the zip directory at the end survived, so it lists 28 pages and only 5 of them still read | `Ted McKeever (Collection) (1987-2007)/1995 - Engines (DC Legends of the Dark Knight 74-75)/Legends of the Dark Knight 075.cbz` |
+
+This one never reached any of the lists above, because it was reported as an
+ordinary comic holding no pages rather than as a damaged one. Its first
+4,163,560 bytes are NUL — two thirds of the file — but a zip keeps its index at
+the *end*, and that end survived. The counter's tar branch swallowed the NUL
+header first and returned an empty member list, so it came out as `0 pages`:
+the same sentence the library uses for a 429 error page saved with a `.cbr`
+name. It looked like junk, not like a loss.
+
+Asked properly, the file lists 29 members — `pg00.jpg` through `pg27.jpg` plus
+an `.sfv` — and fails a CRC check on the first of them. Pages 00 to 19 are
+inside the zeroed region and are gone. **Pages 20 to 24 still read; the other 23
+members do not.** Five pages of a 28-page book is a re-download, not a rescue.
+
+It is on `LIBRARY_REDOWNLOAD.md` with the rest.
+
 ## 14 would not open, and `unar` reads them anyway — but only 7 are comics
 
 The user reported that **MComix opens `The Rise and Fall of the Trigan Empire

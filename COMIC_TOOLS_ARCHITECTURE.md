@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **278 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **280 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -2026,6 +2026,39 @@ The shape is identical every time: **a format test answers "could this be parsed
 the ones these tools exist to find. Three new tests pin it, including one asserting a genuine
 single-member tar is still detected, because the tempting over-correction is to drop tar
 support altogether and call the false positive fixed.
+
+**The same trap was live in `list_members()`, which is the part that matters.**
+The sweep is a diagnostic; the counter is what the Organiser shows and what `repack_comics.py`
+trusts. There, a NUL-headed file reached `tarfile.is_tarfile()` by the same route, opened as
+an empty tar, and returned `[]` — so `page_count()` said **0**. Zero is not a neutral answer
+in this codebase. It is a claim, reserved for the 238 MB HTML error page saved with a `.cbr`
+name: *we looked, and there is provably nothing here*. Sixteen damaged comics were making
+that claim about themselves.
+
+Fixing it by requiring tar members would not have been enough — the file would simply have
+fallen through to the same `return []`. The honest test is the header itself:
+
+```python
+if head and not any(head):
+    return None
+```
+
+No format this function looks for begins with a run of zeros where its signature belongs, so
+a header of nothing is damage and not content. Placed after the magic-byte checks and before
+the tar test, for the same ordering reason as everything else in that function.
+
+Checked against the library before landing, because a wrong answer here costs page counts
+everywhere: 29,487 head reads, 17 files open with 14 NUL bytes, and **none of them counts a
+single page today**. The change can therefore take nothing away.
+
+The seventeenth is the interesting one. `Legends of the Dark Knight 075.cbz` is 6 MB with the
+first 4,163,560 of them zeroed — and a zip keeps its directory at the *end*, which survived.
+It lists 28 pages. Five of them still read; the other 23 are inside the zeroed region. It was
+never on any broken-file list, because `0 pages` had filed it as junk rather than as a loss,
+and nothing about that answer invited a second look. **A wrong answer that looks like a
+category rather than an error does not get re-examined** — which is the practical cost of
+letting "empty" and "unreadable" share a value, and the reason the distinction was written
+into this function in the first place.
 
 ---
 

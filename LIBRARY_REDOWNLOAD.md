@@ -9,7 +9,7 @@ The path shown is where the file was, and where the replacement
 should go. The error page itself is now at the same relative path
 under `/mnt/extramedia/_quarantine/`.
 
-This is one of four groups. The rest, and a ready-made prompt for
+This is one of five groups. The rest, and a ready-made prompt for
 handing the whole job to an agent, are further down the file.
 
 - [ ] **A Quiet Place - Storm Warning 004 (2026) (digital) (Son of Ultron-Empire).cbr** — 59 MB of HTML
@@ -79,7 +79,7 @@ Copy everything in the block below into Cowork. It is written to stand alone —
 it does not assume the agent has seen this conversation or knows the library.
 
 ````text
-I have 50 comic files that are damaged or are not comics at all. I want
+I have 51 comic files that are damaged or are not comics at all. I want
 replacements downloaded. Your working folder is /mnt/extramedia/_incoming/ and
 the checklist is sitting in it:
 
@@ -235,6 +235,17 @@ survives.
 - [ ] **Floyd_Farland_Citizen_of_the_Future.cbz** — 0 MB, zero bytes — the file is empty
   - replaces `/mnt/extramedia/Comics/Floyd_Farland_Citizen_of_the_Future/Floyd_Farland_Citizen_of_the_Future.cbz`
 
+## The 1 whose index outlived its pages
+
+Same damage as the group above — zeros written over the head of the file —
+but a zip keeps its directory at the *end*, and this file's end survived. So
+it still lists all 28 page names while 23 of them are inside the zeroed
+region and gone. It was reported as an ordinary comic with no pages until the
+counter was taught to tell a wiped header from an empty archive.
+
+- [ ] **Legends of the Dark Knight 075.cbz** — 6 MB, first 4 MB is NUL; lists 28 pages, only pages 20-24 still read
+  - replaces `/mnt/extramedia/Comics/Ted McKeever (Collection) (1987-2007)/1995 - Engines (DC Legends of the Dark Knight 74-75)/Legends of the Dark Knight 075.cbz`
+
 ## The 7 overwritten into fragments
 
 These end in megabytes of zeros. The pages before the zeros still decode,
@@ -272,4 +283,4 @@ damaged file here — recovers nothing from them either.
 - [ ] **(020) Ultimate X-Men #019.cbr** — 4 MB, RAR, parsing fails after 1 member — "Data is corrupted"
   - replaces `/mnt/extramedia/Comics/Grant Morrison/Comics/Ultimate X-Men/(020) Ultimate X-Men #019.cbr`
 
-36 files here, plus the 14 above: **50 to fetch again.**
+37 files here, plus the 14 above: **51 to fetch again.**

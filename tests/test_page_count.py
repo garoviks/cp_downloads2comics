@@ -101,6 +101,30 @@ class TestFormatIsDecidedAtByteZero(unittest.TestCase):
         path.write_bytes(os.urandom(4096))
         self.assertEqual(gen.page_count(path), 0)
 
+    def test_a_header_of_zeros_is_damage_and_not_an_empty_comic(self):
+        """Sixteen real files open this way, and all sixteen read as 0 pages.
+
+        A tar archive *ends* in two 512-byte blocks of NUL, so a file that is
+        only zeros is a structurally valid empty tar and `is_tarfile()` says
+        yes — the tar branch listed no members and the count came back zero.
+        Zero here is an accusation: it says a damaged download is an empty
+        comic, and that is the one distinction this function exists to keep.
+        """
+        path = self.tmp / 'nulled.cbr'
+        path.write_bytes(b'\0' * (512 * 20))
+        self.assertIsNone(gen.list_members(path))
+        self.assertIsNone(gen.page_count(path))
+        self.assertEqual(gen.human_pages(path), '')
+
+    def test_zeros_over_the_header_of_a_comic_that_is_otherwise_intact(self):
+        """The commoner shape: `X men 2099 #24.cbr` is 4 MB of NUL followed by
+        20 MB of surviving data. Nothing readable is left to say what it was."""
+        path = self.tmp / 'headless.cbz'
+        path.write_bytes(b'\0' * 4096 + zip_bytes(['001.jpg', '002.jpg']))
+        self.assertIsNone(gen.page_count(path),
+                          'read the pages through a destroyed header and '
+                          'claimed to know how many there were')
+
 
 if __name__ == '__main__':
     unittest.main()

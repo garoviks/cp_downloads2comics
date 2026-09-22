@@ -22,7 +22,8 @@ That is 0.05% of the library by count and 0.10% by size.
 |---|---:|---:|
 | rar | 20,521 | 2230.2 GB |
 | zip | 8,943 | 1380.1 GB |
-| not-an-archive | 23 | 0.8 GB |
+| unknown | 16 | 0.3 GB |
+| not-an-archive | 7 | 0.5 GB |
 
 `unreadable` means the file claims to be an archive and would not open, so nothing is asserted about what is inside it — that is not the same as being empty. `not-an-archive` means no archive format was found at all, which is a definite answer.
 
@@ -167,25 +168,42 @@ Largest first.
 
 ## Not repack candidates, but worth knowing
 
-### 11 unreadable
+### 28 unreadable
 
 These claim to be archives and would not open. Nothing is claimed about their contents. They are a separate problem from repacking.
 
 | Size | Pages | Path |
 |---:|---:|---|
 | 29 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 001 (2009) (Three Covers) (Minutemen-Shamil).cbr` |
+| 26 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 002 (2009) (four covers) (Minutemen-DTs).cbz` |
+| 24 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 003 (2009) (three covers) (fixed) (Minutemen-DTs).cbz` |
+| 24 MB | 0 | `Warren Ellis/1995/Marvel  2099/X men 2099/X men 2099 #24.cbr` |
 | 23 MB | 0 | `Grant Morrison/Comics/Doom Patrol/Doom Patrol 04.cbr` |
+| 22 MB | 0 | `Robotech (2018)/Robotech 022 (2019) (Digital) (Mephisto-Empire).cbr` |
+| 21 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(083) Ultimate X-Men #075.cbr` |
 | 17 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(093) Ultimate X-Men #085.cbr` |
+| 17 MB | 0 | `Warren Ellis/2008/Astonishing X-Men/Astonishing X-Men 040 (2011) (Minutemen-DTermined).cbr` |
+| 17 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(052) Ultimate X-Men #047.cbr` |
+| 17 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(092) Ultimate X-Men #084.cbr` |
 | 15 MB | 0 | `Enders Game/2    Mazer in Prison/Mazer in Prison (Comic).cbr` |
+| 15 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(019) Ultimate X-Men #018.cbr` |
+| 14 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(077) Ultimate X-Men #069.cbr` |
+| 14 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(086) Ultimate X-Men #078.cbr` |
+| 14 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(041) Ultimate X-Men #036.cbr` |
+| 13 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(097) Ultimate X-Men #089.cbr` |
 | 13 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(098) Ultimate X-Men #090.cbr` |
 | 12 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(087) Ultimate X-Men #079.cbr` |
+| 11 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(059) Ultimate X-Men #054.cbr` |
 | 11 MB | 0 | `Ted McKeever (Collection) (1987-2007)/1995 - Engines (DC Legends of the Dark Knight 74-75)/Legends of the Dark Knight 074.cbz` |
 | 10 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(078) Ultimate X-Men #070.cbr` |
+| 6 MB | 0 | `Ted McKeever (Collection) (1987-2007)/1995 - Engines (DC Legends of the Dark Knight 74-75)/Legends of the Dark Knight 075.cbz` |
 | 5 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(043) Ultimate X-Men #038.cbr` |
+| 5 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(042) Ultimate X-Men #037.cbr` |
 | 5 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(020) Ultimate X-Men #019.cbr` |
 | 3 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(001) Ultimate X-Men #00½.cbr` |
+| 1 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 002 (Auxiliary Cover Only) (2009) (Steam-DCP).cbr` |
 
-### 23 not archives at all
+### 7 not archives at all
 
 No archive format found. Definitely holds no comic.
 
@@ -194,22 +212,6 @@ No archive format found. Definitely holds no comic.
 | 392 MB | 0 | `Americatown (2016) (digital) (d'argh-Empire).cbr` |
 | 115 MB | 0 | `Marvel Noir (2009-2011)(digital)/X-Men Noir (2009) (Digital) (Kileko-Empire).cbr` |
 | 31 MB | 0 | `James Bond (2016)/James Bond - 007 005 (2022) (4 covers) (digital) (Son of Ultron-Empire).cbr` |
-| 26 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 002 (2009) (four covers) (Minutemen-DTs).cbz` |
-| 24 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 003 (2009) (three covers) (fixed) (Minutemen-DTs).cbz` |
-| 24 MB | 0 | `Warren Ellis/1995/Marvel  2099/X men 2099/X men 2099 #24.cbr` |
-| 22 MB | 0 | `Robotech (2018)/Robotech 022 (2019) (Digital) (Mephisto-Empire).cbr` |
-| 21 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(083) Ultimate X-Men #075.cbr` |
-| 17 MB | 0 | `Warren Ellis/2008/Astonishing X-Men/Astonishing X-Men 040 (2011) (Minutemen-DTermined).cbr` |
-| 17 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(052) Ultimate X-Men #047.cbr` |
-| 17 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(092) Ultimate X-Men #084.cbr` |
-| 15 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(019) Ultimate X-Men #018.cbr` |
-| 14 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(077) Ultimate X-Men #069.cbr` |
-| 14 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(086) Ultimate X-Men #078.cbr` |
-| 14 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(041) Ultimate X-Men #036.cbr` |
-| 13 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(097) Ultimate X-Men #089.cbr` |
-| 11 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(059) Ultimate X-Men #054.cbr` |
-| 5 MB | 0 | `Grant Morrison/Comics/Ultimate X-Men/(042) Ultimate X-Men #037.cbr` |
-| 1 MB | 0 | `Warren Ellis/2008/2008 Anna Mercury/Vol 2/Anna Mercury 2 002 (Auxiliary Cover Only) (2009) (Steam-DCP).cbr` |
 | 0 MB | 0 | `Floyd_Farland_Citizen_of_the_Future/Floyd_Farland_Citizen_of_the_Future.cbz` |
 | 0 MB | 0 | `Greg Rucka/The Death of Stalin 001 - Agony (2016) (Europe Comics) (digital) (Lynx-Empire).cbr` |
 | 0 MB | 0 | `I'm a Lost Angel/I'm a Lost Angel (2026) (Digital) (Dipole-Empire).cbz` |

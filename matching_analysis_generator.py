@@ -1253,8 +1253,9 @@ def list_members(path: Path) -> Optional[List[str]]:
 
     Three answers, and the difference between the last two is the whole point:
     a list of names, an empty list meaning this is not an archive at all and
-    therefore holds nothing, or None meaning it claims to be an archive and
-    could not be opened, so nothing is asserted about its contents.
+    therefore holds nothing, or None meaning nothing can be asserted about its
+    contents — either it claims to be an archive and will not open, or its
+    header has been overwritten and there is nothing left to read a claim from.
 
     Knowing only zip and rar was the same mistake as PAGE_EXTS: a format we
     cannot name reads as a file holding no pages, so the alarm fires on a good
@@ -1295,6 +1296,22 @@ def list_members(path: Path) -> Optional[List[str]]:
             # A real archive from 1998 that neither 7z nor unrar will open here.
             # We cannot see inside it, so we say nothing about what it holds
             # rather than calling a comic we simply cannot read an empty one.
+            return None
+        if head and not any(head):
+            # A header of nothing. No format we look for begins with a run of
+            # zeros where its signature belongs, so this is damage and not
+            # content — and damage must not share an answer with 'we looked and
+            # there is provably nothing here', which is what the fallback below
+            # means. Sixteen comics in the library open this way, with between
+            # 64 bytes and 22 MB of NUL; several carry tens of megabytes of real
+            # data after it.
+            #
+            # The tar test underneath used to swallow them, and this check has to
+            # come before it rather than instead of it: a tar archive *ends* in
+            # two 512-byte blocks of NUL, so a file that is only zeros is a
+            # structurally valid empty tar and is_tarfile() says yes. They were
+            # reported as holding no pages, which accuses a damaged download of
+            # being an empty comic.
             return None
         # tar carries its `ustar` mark 257 bytes in rather than at the front, so
         # it can only be tested by opening it — after the cheap checks above.
