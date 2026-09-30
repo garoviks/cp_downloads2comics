@@ -204,7 +204,13 @@ def detect_format(path):
         return '7z'
     if head[7:].startswith(gen.ACE_MAGIC):
         return 'ace'
-    if tarfile.is_tarfile(path):
+    # is_tarfile() alone accepts a file of NUL bytes: a tar *ends* in two 512-byte
+    # NUL blocks, so an all-NUL file is a structurally valid empty one. That costs
+    # more here than in the sweep — extract() routes 'tar' to tarfile.open(), which
+    # yields zero pages and never looks at the real bytes after the damage, where
+    # extract_tolerant()/unar may still find something. Answering None instead
+    # sends the file down the path built for damage.
+    if tarfile.is_tarfile(path) and gen.tar_has_members(path):
         return 'tar'
     if zipfile.is_zipfile(path):
         return 'zip'

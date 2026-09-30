@@ -149,6 +149,35 @@ class RepackTests(unittest.TestCase):
         gen._PAGE_COUNTS.clear()
         self.assertEqual(gen.page_count(self.library / 'firefly.cbz'), before)
 
+    def test_a_nulled_file_is_not_a_tar_and_so_reaches_the_damaged_path(self):
+        """The copy of the tar bug that survived being fixed twice.
+
+        `detect_format()` is the third place in this codebase that tested for
+        tar, and the last to be corrected. The sweep's copy and the counter's
+        were fixed a day earlier; this one kept answering 'tar' because nobody
+        went looking for a third. It costs more here than in a report:
+        `extract()` routes 'tar' to `tarfile.open()`, which yields zero pages
+        from an all-NUL file and never reads the surviving bytes after the
+        damage — the bytes `extract_tolerant()`/unar exists to recover.
+
+        None is the answer that sends the file down the path built for damage.
+        """
+        p = self.library / 'nulled.cbr'
+        p.write_bytes(b'\0' * (512 * 20))
+        self.assertTrue(tarfile.is_tarfile(p),
+                        'premise gone: the stdlib no longer accepts this')
+        self.assertIsNone(rp.detect_format(p))
+        with self.assertRaises(ValueError):
+            rp.extract(p, self._work() / 'out')
+
+    def test_a_real_tar_is_still_extractable(self):
+        """The over-correction to avoid: dropping tar support to close it."""
+        original = self._tar('real.cbr', pages=3)
+        self.assertEqual(rp.detect_format(original), 'tar')
+        dest = self._work() / 'out'
+        self.assertEqual(rp.extract(original, dest), 'tar')
+        self.assertEqual(len(rp.pages_in(dest)), 3)
+
     def test_pages_are_stored_not_deflated(self):
         """Every page is already a compressed image. Deflating one again costs
         CPU at both ends to save nothing, and stored is what the slow readers

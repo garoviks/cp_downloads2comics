@@ -1243,6 +1243,32 @@ SEVENZ_MAGIC = b'7z\xbc\xaf\x27\x1c'
 ACE_MAGIC = b'**ACE**'  # sits at offset 7, not at the start of the file
 
 
+def tar_has_members(path: Path) -> bool:
+    """Whether a file `tarfile` accepts actually contains anything.
+
+    `is_tarfile()` is not a container test on its own. A tar archive legitimately
+    *ends* in two 512-byte blocks of NUL, so a file that is nothing but NUL bytes
+    is a structurally valid empty tar and `is_tarfile()` says yes. A container
+    holding no members is not that format, whatever its header says.
+
+    Lives here because three modules test for tar and all three were wrong the
+    same way: the sweep classified sixteen NUL-headed comics as `tar` and listed
+    them as repack work, and `repack_comics.detect_format()` still routed them to
+    `tarfile.open()`, which extracts nothing and never looks at the real bytes
+    after the damage. Two of those were fixed separately, which is how the third
+    survived — so there is now one copy and the others call it.
+
+    `TarError` must be caught here: callers guard `OSError`, and
+    `tarfile.ReadError` is not one.
+    """
+    import tarfile
+    try:
+        with tarfile.open(path) as tar:
+            return tar.next() is not None
+    except (tarfile.TarError, OSError):
+        return False
+
+
 def _read_page_count(path: Path) -> Optional[int]:
     names = list_members(path)
     return None if names is None else _count_images(names)

@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **282 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **284 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -2119,6 +2119,139 @@ reader opening one sees no pages."* **That is false for all sixteen** — every 
 loose pages of its own and opens perfectly well. The nested archive is invisible to a reader,
 which is a different and much smaller claim, and turning it into work for 13 files that needed
 none is how a diagnostic loses its reader's trust.
+
+### 10.16 The third copy, and why fixing a bug twice is what hid it
+
+§10.14 fixed `is_tarfile()` in the sweep. The same day it fixed the same trap in
+`list_members()`, and said so under a heading about the second copy being *the part that
+matters*. It was not the last copy.
+
+`repack_comics.detect_format()` — the detector inside the tool that **moves files** — still read:
+
+```python
+if tarfile.is_tarfile(path):
+    return 'tar'
+```
+
+It surfaced only because the user asked what "the `--execute` path hasn't been run since these
+fixes" actually meant. Answering it properly meant tracing `None` through all eight
+`gen.page_count()` call sites in `repack_comics.py`, and on the way `plan_rescue()` was run
+against the NUL-headed `Legends of the Dark Knight 075.cbz`:
+
+```
+page_count     -> None
+format         -> 'tar'        <-- here
+nothing_to_do  -> False
+```
+
+The cost is higher here than in a report, because `extract()` acts on the answer:
+
+```python
+elif fmt == 'tar':
+    with tarfile.open(path) as t:
+        _safe_tar_extract(t, dest)
+```
+
+A NUL-headed file opens as a valid *empty* tar, yields **zero** pages, and the surviving bytes
+after the damage are never read — which is precisely what `extract_tolerant()`/`unar` exists to
+recover, and what got 188 of 189 pages out of `Trigan Empire v02` (§10.11). Answering `None`
+routes the file to the damaged path instead of a dead end.
+
+**Two fixes are what hid the third.** Having corrected the sweep and then the counter, the
+fault felt closed — the second fix even carried the sentence *"the part that matters"*, which
+is the shape of a conclusion rather than a search. Nobody grepped for a third `is_tarfile`.
+The honest generalisation is not *a format test answers "could this be parsed as X"* — that was
+already known and written down four times. It is: **a duplicated check is not fixed until the
+duplicates are counted.** Fixing the instances you happen to be looking at feels like
+completion and produces a codebase where two of three copies are right, which is worse than
+three wrong ones, because the two right ones make the third look tested.
+
+So `tar_has_members()` now lives once, in `matching_analysis_generator.py`, and the sweep
+re-exports it under its old name (the tests reach it through the sweep). Three modules,
+one implementation.
+
+The tests were wrong in the same way the code was. `tests/test_sweep_containers.py` pinned the
+sweep's copy, and its docstring recited all four prior instances of the fault class — an
+inventory of history standing in for coverage of the present. Nothing pinned
+`detect_format()`, which is why it was the copy that survived. Two tests now do, and the
+second one matters: the tempting over-correction is to drop tar support and call it closed.
+
+Also checked, and this is the reassuring half: `None` reaching `repack_comics.py` where `0`
+used to arrive cannot cause a bad write. All eight `page_count()` call sites fail closed —
+`if not expected: raise` treats `None` as falsy, `len(found) != expected` is a legal `int`/`None`
+comparison that raises, `sum(p or 0 for p in pages)` handles it explicitly, and every write
+path is wrapped in `except BaseException: unstage(staged, path); raise`. The behaviour that
+*did* change is `plan_rescue()`: it is built around `None` as its signal —
+
+```python
+'nothing_to_do': done is not None,
+```
+
+— so before §10.14 these files returned `0`, `nothing_to_do` was `True`, and **the rescue
+skipped exactly the files it was written for.** It now acts on them. That is the intended
+direction, and it is also why `detect_format()` being wrong stopped being harmless.
+
+**What the corrected routing is worth on these files: nothing.** With `detect_format()` now
+answering `None`, the 16 it reclassified were run through `extract_tolerant()` and every
+extracted file decoded with Pillow. **0 of 16 yielded a single readable page** — and unar
+extracted no files at all,
+rather than files that failed to decode. The damage is at the head, where a RAR keeps its marker
+block and main header, so there is no entry point to walk from. unar's tolerance is for damage
+it can reach *past*; here the first thing missing is the map.
+
+That result was not believed on its own, because *"0 pages"* from a one-off script had already
+been a false negative once in the same week — the nested-archive folder measurement. So the
+identical code path was run against `The Rise and Fall of the Trigan Empire v02`, the file
+§10.11 recorded as unreadable to `unrar` and worth 188 JPEGs to `unar`:
+
+```
+CONTROL: 188 pages open, 0 fail
+```
+
+The harness recovers pages when pages are there. **A negative result needs a positive control,
+or it is just a script that does nothing** — the same mistake as trusting a format test, one
+level up: the thing believed without being asked for contents was my own measurement.
+
+**And the set of 16 was the wrong set.** It came from querying the sweep scratch for
+`container == 'unknown'`, which is the group the tar fix moved. A full walk of the library for
+NUL heads, run separately, finds **17** — the extra one being `Legends of the Dark Knight
+075.cbz`, whose zip end-of-central-directory sits at the *end* of the file and survived the
+damage, so it classifies as `zip` and the filter never saw it. It is also the only member of the
+group with readable pages, so the one file worth testing was the one excluded. A filter derived
+from a classification tests the classification, not the library.
+
+Measured directly, it splits the tooling cleanly:
+
+| | `extract_tolerant()` / unar | direct zip member read |
+|---|---|---|
+| `Legends of the Dark Knight 075.cbz` | **0** pages | **5** of 29 members decode |
+
+So unar is the wrong tool here and `detect_format()` is right to say `zip`. `do_rescue()` calls
+`extract_tolerant()` for everything except ACE, gets nothing, and raises *"recovered no readable
+page from 0 extracted file(s)"* — then `unstage()` puts the original back. **It fails closed,
+which is the correct outcome, and it reaches it for the wrong reason.**
+
+Wiring a zip fallback into the rescue to capture those 5 pages would be a mistake, and the
+reason is the tail-measure blind spot above. `is_fragment()` answers **False** for this file —
+`overwritten_bytes()` is 3 and `unreached_bytes()` is `None`, because both look at the end of a
+file whose beginning is what was destroyed. Five pages out of 29 is the definition of a
+fragment, and the guard written to refuse exactly that cannot see it. A smarter extractor would
+therefore write a 5-page `.cbz` into the slot of a 29-page comic, under its full name, with
+`pages_lost: None` — which is §10.14's sixteen empty archives again, wearing one name instead of
+sixteen.
+
+The file is already on the re-download list. It stays there, the rescue keeps refusing it, and
+**the fragment guard's inability to see head damage is recorded here as a known defect rather
+than patched around** — fixing extraction first would remove the accident that is currently
+protecting the file.
+
+Two smaller things fell out of the run. `overwritten_bytes()` reports 0 or 1 for most of these
+files, and that is not a bug: it measures the NUL run at the *tail*, which is what separates a
+truncated download from an overwritten one. This group is head-damaged, so every tail-oriented
+field in a `plan_rescue` record — `overwritten`, `unreached`, `fragment` — describes the end of a
+file whose beginning is the part that is gone. And the runs are not uniform: `X men 2099 #24`
+carries 15.5 MB of trailing zeros as well as its ruined head, while six of the ten Ultimate
+X-Men issues end in exactly one.
 
 ---
 
