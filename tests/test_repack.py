@@ -932,6 +932,93 @@ class RepackTests(unittest.TestCase):
         path = self._damaged('cut.cbz', good=3, broken=1)
         self.assertFalse(rp.is_fragment(path))
 
+    def _zeroed_head(self, name, good=3, filler=400 << 10, nulls=300 << 10):
+        """A zip whose front is NUL but whose central directory survived.
+
+        The shape both other terms call healthy, and the reason there is a third.
+        A zip keeps its index at the END, so zeros in front of it leave every byte
+        accounted for: 7z reports Physical Size equal to the whole file and emits
+        no Tail Size, and the file does not end in NUL. `Legends of the Dark
+        Knight 075.cbz` is this — fully indexed, claims 29 pages, opens 5.
+
+        The filler member goes first so the zeros land on it and the real pages
+        still decode, which is what the live file does too. Stored, not deflated,
+        because that is what this tool writes.
+        """
+        path = self.library / name
+        with zipfile.ZipFile(path, 'w', zipfile.ZIP_STORED) as z:
+            z.writestr('000_filler.bin', os.urandom(filler))
+            for i in range(1, good + 1):
+                z.writestr(f'{i:03d}.jpg', jpeg_bytes(page_colour(i)))
+        with open(path, 'r+b') as f:
+            f.write(b'\x00' * nulls)
+        return path
+
+    def test_nul_in_front_of_a_surviving_index_is_still_a_fragment(self):
+        """The blind spot that was recorded as a known defect before it was
+        closed. Both older terms ask whether part of the file is unaccounted for,
+        and here the answer is honestly no."""
+        path = self._zeroed_head('holed.cbz')
+        size = path.stat().st_size
+
+        self.assertLess(rp.overwritten_bytes(path), rp.OVERWRITTEN_MIN,
+                        'does not end in NUL, so the first term cannot see it')
+        unreached = rp.unreached_bytes(path)
+        self.assertTrue(unreached is None or unreached / size < rp.UNREACHED_MAX,
+                        'the index still accounts for the file, so the second '
+                        'term cannot see it either')
+        self.assertGreaterEqual(rp.zeroed_bytes(path) / size, rp.ZEROED_MAX)
+        self.assertTrue(rp.is_fragment(path))
+
+    def test_a_stored_comic_of_real_pages_is_not_called_a_fragment(self):
+        """The false positive that would matter most. Store compression is a
+        requirement of this tool, so every file it writes exposes raw page bytes
+        to this measure — and flat colour in a JPEG does contain zeros. Measured
+        over 150 healthy comics, 148 score exactly 0.000% and the worst scores
+        0.626% at a 4 KB block, 0.000% at the 64 KB one used here."""
+        path = self._damaged('whole.cbz', good=6, broken=0)
+        size = path.stat().st_size
+
+        self.assertLess(rp.zeroed_bytes(path) / size, 0.01)
+        self.assertFalse(rp.is_fragment(path))
+
+    def test_a_small_run_of_nul_is_left_alone(self):
+        """What the measure is deliberately blind to, stated as a test so it is
+        not mistaken for a bug later. A run under the block size does not count,
+        however much of the file it adds up to. Catching this needs the coverage
+        test — extract, and count pages that decode against pages claimed —
+        which cannot run from here because the caller is still deciding whether
+        to extract at all."""
+        path = self.library / 'speckled.cbz'
+        with zipfile.ZipFile(path, 'w', zipfile.ZIP_STORED) as z:
+            for i in range(1, 9):
+                z.writestr(f'{i:03d}.jpg', b'\x00' * (32 << 10))
+
+        self.assertEqual(rp.zeroed_bytes(path), 0)
+
+    def test_the_reason_names_the_term_that_fired(self):
+        """Every fragment gets explained to the user in exactly one place, and
+        the explanation has to match the term that caught it. Before this was one
+        function it was a two-branch if/else in two places, so a file caught by
+        the third term would have been described with `unreached` — which is None
+        for precisely that file, and mb(None) raises TypeError."""
+        self.assertIn('NUL', rp.fragment_reason(10 << 20, 2 << 20, None, 0))
+        self.assertIn('lister', rp.fragment_reason(10 << 20, 0, 9 << 20, 0))
+        self.assertIn('in blocks', rp.fragment_reason(10 << 20, 0, None, 9 << 20))
+
+    def test_the_plan_carries_what_the_listing_needs_to_explain_itself(self):
+        """The listing in main() explains a fragment from the plan dict alone, so
+        a term is only as visible as the number the plan records. `unreached` is
+        None for this file, which is what makes the third one necessary."""
+        path = self._zeroed_head('holed.cbz')
+        plan = rp.plan_rescue(path)
+
+        self.assertTrue(plan['fragment'])
+        self.assertGreaterEqual(plan['zeroed'] / plan['size'], rp.ZEROED_MAX)
+        self.assertIn('in blocks',
+                      rp.fragment_reason(plan['size'], plan['overwritten'],
+                                         plan['unreached'], plan['zeroed']))
+
     def test_the_overwritten_files_are_off_the_rescue_list(self):
         """They were on it, and one of them got rescued before the check
         existed. The bytes are what stops it now, but leaving them listed as

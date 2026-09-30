@@ -876,7 +876,7 @@ into the wrong folder.
 
 ## 10. Test strategy
 
-Four layers. Current state: **284 tests in the Organiser, 16 in the Builder, all passing.**
+Four layers. Current state: **289 tests in the Organiser, 16 in the Builder, all passing.**
 The Builder's are newer and live in its own repo: `tests/test_exclusions_roundtrip.py` (7a)
 and `tests/test_review_status.py` (O19).
 
@@ -2243,7 +2243,8 @@ sixteen.
 The file is already on the re-download list. It stays there, the rescue keeps refusing it, and
 **the fragment guard's inability to see head damage is recorded here as a known defect rather
 than patched around** — fixing extraction first would remove the accident that is currently
-protecting the file.
+protecting the file. *(Closed in §10.17, which also corrects the scale of it: nine of these
+seventeen files were invisible to the guard, not one.)*
 
 Two smaller things fell out of the run. `overwritten_bytes()` reports 0 or 1 for most of these
 files, and that is not a bug: it measures the NUL run at the *tail*, which is what separates a
@@ -2252,6 +2253,89 @@ field in a `plan_rescue` record — `overwritten`, `unreached`, `fragment` — d
 file whose beginning is the part that is gone. And the runs are not uniform: `X men 2099 #24`
 carries 15.5 MB of trailing zeros as well as its ruined head, while six of the ten Ultimate
 X-Men issues end in exactly one.
+
+---
+
+### 10.17 Measuring damage instead of inferring it, and the blind spot that was nine files wide
+
+§10.16 closed with the fragment guard's blindness to head damage written down as a known defect.
+This closes it, and the first thing the measurement did was correct the previous entry.
+
+**Both existing terms ask one question.** `overwritten_bytes()` asks whether the file ends in
+NUL; `unreached_bytes()` asks whether 7z leaves a `Tail Size` behind. Different evidence, same
+question: *is part of this file unaccounted for?* A zip keeps its central directory at the END,
+so damage landing in front of it leaves the index intact and describing every byte — 7z reports
+`Physical Size` equal to the whole file, emits no `Tail Size` at all, and `unreached_bytes()`
+correctly abstains. `Legends of the Dark Knight 075.cbz` is fully indexed, claims 29 pages, opens
+5, and both terms call it healthy.
+
+**How wide the hole actually was.** §10.16 said one file. Running all three terms separately over
+all seventeen says nine. The `U` term never fired once — every one of the seventeen returns `tail
+none`, because head damage is exactly the shape 7z can still index around. So the guard was
+carried entirely by the tail-NUL term, which caught eight:
+
+| term that fired | files |
+|---|---|
+| ends in ≥1 MB NUL (`N`) | 8 |
+| past what a lister reached (`U`) | **0** |
+| NUL in blocks (`Z`, new) | **17** |
+| **invisible to the guard before this change** | **9** |
+
+The claim in `is_fragment()`'s old docstring that the second term "subsumes the first for every
+file measured here" was true of the files measured *then* — truncations and tail fragments. It
+was never true of this class, and nothing re-checked it when this class appeared. That is the
+same failure mode as §10.16's third copy: a conclusion carried forward instead of re-measured.
+
+**The measure had to be position-independent, and finding that out took a map.** The obvious fix
+was a head test. Mapping the NUL runs in `Legends 075` killed it: one run of 4.16 MB at offset 0,
+then four more of *exactly* 16,384 bytes at 4212712, 5359592, 5539816 and 6096872. Equal-sized
+runs scattered through a file is not an interrupted download — it is storage writing zeros over
+live blocks, which is worth reading next to the **768 RAID1 mismatches this array has counted and
+never located**. A term keyed to the head would have fitted this one file and missed the next.
+
+So: `zeroed_bytes()` — bytes in NUL runs of ≥ 64 KB, anywhere in the file, over file size.
+
+**Calibrated before choosing a threshold**, because a threshold nobody measured is a guess that
+looks like engineering. 150 healthy comics (rar+zip, pages readable, 1–120 MB, seeded sample)
+against all 17:
+
+| | share of file in NUL runs |
+|---|---|
+| healthy, 148 of 150 | **exactly 0.000%** |
+| healthy worst, at a 4 KB block | 0.626% |
+| healthy worst, at 64 KB | **0.000%** |
+| damaged minimum | **63.014%** |
+| damaged maximum | 99.780% |
+
+A hundredfold gap with nothing in it, so `ZEROED_MAX = 0.30` is a margin, not a tuned parameter —
+the standing `OVERWRITTEN_MIN` already set. **The block size is 64 KB and not 4 KB for a reason
+specific to this tool:** the one healthy file that scored above zero, `The Life of a Coat (2019)
+(digital-Empire).cbz`, is healthy (30 of 31 members decode; the failure is a directory entry) and
+stores every member `ZIP_STORED`, which is what exposes raw page bytes to the measure at all.
+Store compression is a *requirement* here, so **every file this tool writes is that shape**.
+64 KB takes the healthy maximum to 0.000% and costs the damaged files about one point.
+
+Verified on copies under `/home/nesha/Downloads/comics_download/test-me-here/` rather than in
+place — the measure reads whole files and `/mnt/extramedia` is at 98%. All 17 flagged; 7 healthy
+controls at 0.000% with no term firing.
+
+**One reporting change came with it, and it is the §10.16 lesson applied rather than repeated.**
+Both places that explain a fragment to the user — the refusal in `do_rescue()` and the plan
+listing in `main()` — were a two-branch `if/else`. Adding a third term without touching them
+would have had both describe a `Z`-only file as *"N MB of it unreachable"*, and `unreached` is
+`None` for precisely those files, so the listing would have raised `TypeError` inside `mb()`
+instead of printing. Two copies of a three-way is how three copies of a tar check happened. There
+is now one `fragment_reason()` and both callers use it.
+
+**What this is still blind to, stated so it is not rediscovered as a bug.** Damage confined to
+runs under 64 KB. Catching that needs the test this one stands in for — extract, then count pages
+that decode against pages claimed — which cannot run from `is_fragment()`, because the caller is
+deciding whether to extract at all. That is a change to a write path and is scheduled separately,
+not smuggled in here. A test asserts the blindness rather than leaving it to be found.
+
+Five tests: the surviving-index fragment, a `ZIP_STORED` comic of real pages not flagged, the
+sub-block blindness, `fragment_reason()` naming each of the three terms, and the plan dict
+carrying the value the listing needs.
 
 ---
 

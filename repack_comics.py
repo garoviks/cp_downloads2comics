@@ -641,6 +641,64 @@ def unreached_bytes(path):
     return int(found.group(1)) if found else None
 
 
+def zeroed_bytes(path, block=1 << 16, chunk=1 << 22):
+    """How much of the file is NUL, in runs of at least `block`, anywhere in it.
+
+    The other two measures ask the same question in two ways — is part of this
+    file unaccounted for? — and there is a kind of damage that answers no. A zip
+    keeps its central directory at the END, so damage that lands in front of it
+    leaves the index intact and describing every byte. `7z` then reports Physical
+    Size equal to the whole file and emits no Tail Size at all, so
+    unreached_bytes() abstains; the file does not end in NUL, so
+    overwritten_bytes() clears it. `Legends of the Dark Knight 075.cbz` is fully
+    indexed, claims 29 pages, opens 5, and was called healthy by both.
+
+    Mapping it showed why a measure keyed to the head would have been wrong: one
+    run of 4.16 MB at offset 0, then four more runs of exactly 16,384 bytes at
+    4212712, 5359592, 5539816 and 6096872. Equal-sized runs scattered through a
+    file is not an interrupted download, it is the storage writing zeros over
+    live blocks — which is worth reading next to the 768 RAID1 mismatches this
+    array has logged and never located. So the measure cannot care where the
+    damage sits, only how much of the file it is.
+
+    Runs rather than a plain NUL count, because page data legitimately contains
+    zeros. Measured over 150 healthy comics against all 17 known-NULled ones:
+    148 of the 150 score exactly 0.000%, the worst scores 0.626% at a 4 KB block
+    and 0.000% at 64 KB, and the least-damaged of the 17 scores 63.014% at every
+    block size tried. Hence 64 KB: it costs the damaged files about a point and
+    takes the healthy maximum to zero. The one healthy file that registered at
+    all is stored uncompressed, which is why its raw page bytes are exposed to
+    this at all — and uncompressed is what this tool writes, so repacked files
+    are precisely the ones most likely to score above zero. That is the reason
+    the block size is not left at 4 KB.
+
+    Blind, by construction, to damage confined to runs under 64 KB. Catching that
+    needs the test this one is standing in for: extract, and count how many pages
+    actually decode against how many the archive claims. That is a better test
+    and cannot be run from here, because the caller is deciding whether to
+    extract at all.
+
+    Streams the file; never holds it whole.
+    """
+    total = run = 0
+    with open(path, 'rb') as f:
+        while True:
+            buf = f.read(chunk)
+            if not buf:
+                break
+            # split() on NUL yields N+1 pieces for N NULs, so the NULs are the
+            # separators: one per piece after the first. `run` carries across
+            # both pieces and chunks, so a run spanning either is counted whole.
+            for i, piece in enumerate(buf.split(b'\x00')):
+                if i:
+                    run += 1
+                if piece:
+                    if run >= block:
+                        total += run
+                    run = 0
+    return total + (run if run >= block else 0)
+
+
 OVERWRITTEN_MIN = 1 << 20
 
 # Above this share of the file left unaccounted for, what the lister reached is
@@ -648,18 +706,51 @@ OVERWRITTEN_MIN = 1 << 20
 # 39.7% with nothing in between, so a third sits clear of both edges.
 UNREACHED_MAX = 0.30
 
+# Above this share of the file sitting in NUL runs, what still decodes is a piece
+# of the comic however well the archive indexes itself. Measured gap is 0.000%
+# against 63.014%, so a third is a margin rather than a tuned parameter — the
+# same standing OVERWRITTEN_MIN has.
+ZEROED_MAX = 0.30
+
 
 def is_fragment(path):
     """Whether what a tolerant extractor gets out of this file is a comic or a
-    piece of one. Two independent signals, either of which is enough: the file
-    ends in megabytes of NUL, or most of it is past what any lister can index.
-    The second subsumes the first for every file measured here, but the first is
-    what the reports explain and it names the cause, so both are kept."""
+    piece of one. Three independent signals, any one of which is enough: the file
+    ends in megabytes of NUL, or most of it is past what any lister can index, or
+    most of it is NUL in blocks wherever they fall.
+
+    None of the three subsumes another, despite the overlap. zeroed_bytes()
+    measures a superset of what overwritten_bytes() measures — a trailing run is
+    a run — but the thresholds differ in kind, absolute against relative: a
+    120 MB file ending in 2 MB of NUL is 2% zeroed and only the first term
+    catches it. The third exists for the case both others call healthy, which is
+    damage in front of a surviving index.
+    """
     size = path.stat().st_size
     unreached = unreached_bytes(path)
     return (overwritten_bytes(path) >= OVERWRITTEN_MIN
             or (unreached is not None and size
-                and unreached / size >= UNREACHED_MAX))
+                and unreached / size >= UNREACHED_MAX)
+            or bool(size and zeroed_bytes(path) / size >= ZEROED_MAX))
+
+
+def fragment_reason(size, nulls, unreached, zeroed):
+    """Which of is_fragment()'s three terms fired, in words, for a report.
+
+    One copy because there are two callers — the refusal in do_rescue() and the
+    plan listing — and they had a two-branch if/else each. Adding a third term to
+    is_fragment() without this would have had both of them explain a file caught
+    by the new term as `{mb(unreached)} of it unreachable`, and unreached is None
+    for exactly that file, so the listing would have raised TypeError inside mb()
+    rather than print anything. Three copies of a check is how the tar bug
+    survived being fixed twice (§10.16); two is enough to repeat it.
+    """
+    if nulls >= OVERWRITTEN_MIN:
+        return f'ends in {mb(nulls)} of NUL'
+    if unreached is not None and size and unreached / size >= UNREACHED_MAX:
+        return (f'{mb(unreached)} of {mb(size)} is past anything a lister '
+                f'can reach')
+    return f'{mb(zeroed)} of {mb(size)} is NUL in blocks'
 
 # Set once from main(). A module flag rather than an argument because the job
 # functions share one signature so that main() can dispatch on the plan's kind,
@@ -680,6 +771,7 @@ def plan_rescue(path):
             'size': path.stat().st_size,
             'overwritten': nulls, 'convert': False,
             'unreached': unreached_bytes(path),
+            'zeroed': zeroed_bytes(path),
             'fragment': is_fragment(path),
             'nothing_to_do': done is not None,
             'dest': str(path.with_suffix('.cbz'))}
@@ -712,11 +804,10 @@ def do_rescue(path, convert, work):
     claimed = claimed_pages(path)
     nulls = overwritten_bytes(path)
     unreached = unreached_bytes(path)
+    zeroed = zeroed_bytes(path)
     fragment = is_fragment(path)
     if fragment and not SALVAGE_FRAGMENTS:
-        why = (f'ends in {mb(nulls)} of NUL' if nulls >= OVERWRITTEN_MIN
-               else f'{mb(unreached)} of {mb(path.stat().st_size)} is past '
-                    f'anything a lister can reach')
+        why = fragment_reason(path.stat().st_size, nulls, unreached, zeroed)
         raise RuntimeError(
             f'{why} — a fragment, not a truncation. The pages that still read '
             f'are a piece of the comic and the real page count is unknowable, '
@@ -759,7 +850,7 @@ def do_rescue(path, convert, work):
     _finish(staged, path, new_file, final)
     return {'pages_after': len(good), 'converted': converted,
             'pages_claimed': claimed, 'overwritten': nulls,
-            'unreached': unreached, 'fragment': fragment,
+            'unreached': unreached, 'zeroed': zeroed, 'fragment': fragment,
             # Only meaningful for a truncated file, where the lister reached the
             # end and the count it gave is the real one. On a fragment the lister
             # stopped at the damage, so claimed - recovered measures the tool's
@@ -1530,9 +1621,9 @@ def _print_plan(plan):
             # Not "claims N pages": the lister stopped at the damage, so N is how
             # far it read. Saying what the file actually is leaves less room to
             # mistake a fragment for a comic.
-            damage = (f'ends in {mb(plan["overwritten"])} of NUL'
-                      if plan.get('overwritten', 0) >= OVERWRITTEN_MIN
-                      else f'{mb(plan["unreached"])} of it unreachable')
+            damage = fragment_reason(plan['size'], plan.get('overwritten', 0),
+                                     plan.get('unreached'),
+                                     plan.get('zeroed', 0))
             claims = f'{damage}, {plan["pages_before"]} pages readable before it'
         elif plan['pages_before'] is None:
             claims = 'page count unknown'
