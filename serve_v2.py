@@ -9,6 +9,7 @@ Usage:
 
 import csv
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -100,6 +101,18 @@ def clean_rule_folder(folder: str) -> str:
     return folder
 
 
+def _write_rules(rules_path: Path, lines) -> None:
+    """Write the rules file, first copying what is there to '<name>.bak'.
+
+    One level of undo for a file the user hand-edits and two buttons rewrite: the
+    previous .bak is overwritten, and a file that does not exist yet has nothing
+    to keep.
+    """
+    if rules_path.exists():
+        shutil.copy2(rules_path, rules_path.with_name(rules_path.name + ".bak"))
+    rules_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def save_matching_rule(rules_path: Path, folder: str, decision: str) -> str:
     """Record one Accept/Refuse decision, and return what was done.
 
@@ -151,7 +164,7 @@ def save_matching_rule(rules_path: Path, folder: str, decision: str) -> str:
 
     _refresh_rule_counts(lines)
 
-    rules_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_rules(rules_path, lines)
     return f"{heading}: {folder}"
 
 
@@ -228,7 +241,7 @@ def save_publisher_home(rules_path: Path, series: str, folder: str) -> str:
         at += 1
     lines.insert(at, f"- {series} => {folder}")
     _refresh_rule_counts(lines)
-    rules_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_rules(rules_path, lines)
     return f"Publisher home: {series} => {folder}"
 
 

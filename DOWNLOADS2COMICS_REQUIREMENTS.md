@@ -97,6 +97,7 @@ Written to `{source_dir}/matching_analysis_consolidated.csv` after each scan.
 | `Files Details` | Pipe-separated filenames (for subfolders) |
 | `Right Loose Files` | Pipe-separated right-side filenames to co-move |
 | `Existing Copies` / `Existing Copy Sizes` / `Existing Copy Pages` | Copies of the same book ANYWHERE in the library (root, top-level folders, one level of subfolders; the destination folder is searched in full and listed first). Warning only; the mover asks per file before executing. |
+| `Existing Copy Identical` / `Also In Downloads Identical` | `yes \| no \| ...`, one per entry of the column they follow: exact byte size AND page count equal. The page and the top bar's "(Y identical)" read this; an older CSV without it shows no "identical". |
 | `Also In Downloads` | Other source files that are the same book (`other => size, pages (this: size, pages)`), or `same N books as <folder>` for two folders that pair up file for file. Warning only. |
 
 ### FR7: Dry Run

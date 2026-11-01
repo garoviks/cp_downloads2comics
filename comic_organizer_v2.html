@@ -1635,6 +1635,7 @@ function existingCopies(row) {
     .map(s => s.trim()).filter(Boolean);
   const sizes = String(row['Existing Copy Sizes'] || '').split('|').map(s => s.trim());
   const pages = String(row['Existing Copy Pages'] || '').split('|').map(s => s.trim());
+  const same = String(row['Existing Copy Identical'] || '').split('|').map(s => s.trim());
   return names.map((entry, i) => {
     const halves = entry.split('=>').map(s => s.trim());
     const bytes = String(sizes[i] || '').split('=>').map(s => s.trim());
@@ -1646,6 +1647,7 @@ function existingCopies(row) {
       exSize: bytes[1] || '?',
       inPages: leaves[0] || '',
       exPages: leaves[1] || '',
+      identical: same[i] === 'yes',
     };
   });
 }
@@ -1684,13 +1686,15 @@ function duplicateNoteHtml(row) {
 // ─── Warnings: copies in the library and twins in Downloads ───────────────────
 //
 // Both kinds are only ever warnings. Nothing is unticked, skipped or deleted
-// because of them; the user picks which copy to keep. 'identical' means the
-// size shown AND the page count are both the same - sizes are shown to the MB,
-// so it says "these two look the same", not that the bytes were compared.
+// because of them; the user picks which copy to keep. 'identical' is the
+// generator's verdict (the 'Existing Copy Identical' and 'Also In Downloads
+// Identical' columns): the exact byte sizes AND the page counts are equal. The
+// sizes shown are rounded to the MB, so the page never works it out from them.
+// A CSV from before those columns has no verdicts, so it shows no 'identical'.
 let dupOnly = false;
 
 function isIdentical(c) {
-  return c.inSize === c.exSize && c.inPages === c.exPages;
+  return c.identical === true;
 }
 
 // 'Also In Downloads' entries (see matching_analysis_generator.py):
@@ -1698,12 +1702,15 @@ function isIdentical(c) {
 //   mine ~ other => size, pages (this: size, pages)   a folder row, naming its file
 //   same 8 books as <folder>                          two folders that pair up
 function alsoInDownloads(row) {
-  return String(row['Also In Downloads'] || '').split(' | ').map(s => s.trim()).filter(Boolean)
-    .map(entry => {
+  const verdicts = String(row['Also In Downloads Identical'] || '').split(' | ').map(s => s.trim());
+  return String(row['Also In Downloads'] || '').split(' | ').map(s => s.trim())
+    .map((entry, i) => ({ entry, identical: verdicts[i] === 'yes' }))
+    .filter(x => x.entry)
+    .map(({ entry, identical }) => {
       if (/^same \d+ books as /.test(entry)) return { set: entry };
       const m = entry.match(/^(?:(.*?) ~ )?(.*?) => ([^,]*), (.*?) \(this: ([^,]*), (.*)\)$/);
       if (!m) return { set: entry };
-      return { mine: m[1] || '', other: m[2], exSize: m[3], exPages: m[4], inSize: m[5], inPages: m[6] };
+      return { mine: m[1] || '', other: m[2], exSize: m[3], exPages: m[4], inSize: m[5], inPages: m[6], identical };
     });
 }
 

@@ -38,6 +38,14 @@ COMIC_EXTS = {'.cbz', '.cbr'}
 # '(Digital Rip)', '(Son of Ultron-Empire)'). Those differ between two rips of
 # one book, which is exactly what a duplicate check is looking for, so they are cut.
 _PARENS = re.compile(r'\([^)]*\)')
+
+# ...except when the brackets hold the volume. 'Cosmoknights (Book 01) (2019)' and
+# 'Cosmoknights (Book 02) (2023)' differ in nothing but that marker, so cutting
+# every bracket made two different books one. A marker found inside a bracket is
+# lifted out before the cut and joins the signature as if it had been written bare:
+# (Book N), (Vol N), (Vol. N), (Volume N), (vN), (Part N). Years stay ignored.
+_BRACKET_VOLUME = re.compile(
+    r'(?<![a-z])(book|volume|vol\.?|part|v)\s*0*(\d+)\b', re.I)
 _WORD = re.compile(r'[a-z0-9]+')
 
 # 'v01' is one token, not 'v' then '01', so stripping format words and leading
@@ -93,8 +101,14 @@ def title_signature(filename: str) -> frozenset:
     remaining evidence that two files carrying the same series and volume number
     are not the same book.
     """
-    bare = _PARENS.sub(' ', Path(filename).stem).lower()
+    stem = Path(filename).stem
+    bare = _PARENS.sub(' ', stem).lower()
     words = set()
+    for bracket in re.findall(r'\(([^)]*)\)', stem):
+        for marker, number in _BRACKET_VOLUME.findall(bracket):
+            words.add(str(int(number)))
+            if marker.lower() == 'part':      # 'part' is not a format word, so a bare
+                words.add('part')             # 'Part 2' keeps it and the bracketed must too
     for w in _WORD.findall(bare):
         if w in _FORMAT_WORDS:
             continue

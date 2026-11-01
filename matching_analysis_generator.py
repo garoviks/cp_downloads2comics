@@ -1325,6 +1325,29 @@ def find_existing_copies(src_rel: str, dest_folder: Optional[Path]) -> List[Path
     return found
 
 
+def same_bytes_and_pages(a: Path, b: Path) -> bool:
+    """Whether two files are the same file as far as size and page count can say.
+
+    Exact byte sizes (st_size), not the 'NN MB' the page shows: two rips of one
+    book that both read '41 MB' and '120p' can differ by a few KB, so 'identical'
+    on those numbers was a claim the data could not back. Equal bytes plus equal
+    pages is strong evidence of one file; it is still only a warning and nothing
+    is acted on. Unreadable (stat fails, or no page count) is never
+    identical.
+    """
+    try:
+        if a.stat().st_size != b.stat().st_size:
+            return False
+    except OSError:
+        return False
+    pages = human_pages(a)
+    return bool(pages) and pages == human_pages(b)
+
+
+def _yes_no(flag: bool) -> str:
+    return 'yes' if flag else 'no'
+
+
 def describe_existing_copies(src_rels, dest_folder_name: str) -> Tuple[str, str, str]:
     """The three CSV columns, as parallel ' | '-joined lists.
 
@@ -1339,16 +1362,35 @@ def describe_existing_copies(src_rels, dest_folder_name: str) -> Tuple[str, str,
     # It has no folder of its own to look in, but the copy could be anywhere, so
     # the library index still answers. None, not DEST_DIR: passing the root as
     # the "destination folder" would make index_destination_folder() walk it all.
+    names, sizes, pages = [], [], []
+    for src_rel, copy in _existing_copy_pairs(src_rels, dest_folder_name):
+        src = SRC_DIR / src_rel
+        names.append(f'{Path(src_rel).name} => {copy.relative_to(DEST_DIR)}')
+        sizes.append(f'{human_size(src)} => {human_size(copy)}')
+        pages.append(f'{human_pages(src)} => {human_pages(copy)}')
+    return ' | '.join(names), ' | '.join(sizes), ' | '.join(pages)
+
+
+def describe_existing_copies_identical(src_rels, dest_folder_name: str) -> str:
+    """'yes | no | ...': one verdict per entry of the Existing Copies column.
+
+    Parallel to those columns and decided here, from exact bytes, so the page and
+    the top bar both read one answer instead of re-deriving it from rounded text.
+    """
+    return ' | '.join(_yes_no(same_bytes_and_pages(SRC_DIR / s, c))
+                      for s, c in _existing_copy_pairs(src_rels, dest_folder_name))
+
+
+def _existing_copy_pairs(src_rels, dest_folder_name: str):
+    # A blank folder is a row that files into the library root (COPY_TO_BASE).
+    # It has no folder of its own to look in, but the copy could be anywhere, so
+    # the library index still answers. None, not DEST_DIR: passing the root as
+    # the "destination folder" would make index_destination_folder() walk it all.
     folder = dest_folder_name.strip('/').strip()
     dest_folder = DEST_DIR / folder if folder else None
-    names, sizes, pages = [], [], []
     for src_rel in src_rels:
-        src = SRC_DIR / src_rel
         for copy in find_existing_copies(src_rel, dest_folder):
-            names.append(f'{Path(src_rel).name} => {copy.relative_to(DEST_DIR)}')
-            sizes.append(f'{human_size(src)} => {human_size(copy)}')
-            pages.append(f'{human_pages(src)} => {human_pages(copy)}')
-    return ' | '.join(names), ' | '.join(sizes), ' | '.join(pages)
+            yield src_rel, copy
 
 
 def _download_files(row: Dict) -> List[str]:
@@ -1412,35 +1454,34 @@ def annotate_twins_in_downloads(rows: List[Dict]) -> None:
     for i, row in enumerate(rows):
         parts = [f"same {len(_download_files(rows[i]))} books as {rows[j].get('Left Folder', '')}"
                  for j in same_set.get(i, [])]
+        verdicts = ["no"] * len(parts)        # a set of folders is never called identical
         for mine, (j, other) in links.get(i, []):
             if j in same_set.get(i, []):
                 continue
             lead = f"{Path(mine).name} ~ " if is_folder(row) else ""
             parts.append(f"{lead}{other} => {measure(other)} (this: {measure(mine)})")
+            verdicts.append(_yes_no(same_bytes_and_pages(SRC_DIR / mine, SRC_DIR / other)))
         row["Also In Downloads"] = " | ".join(parts)
+        row["Also In Downloads Identical"] = " | ".join(verdicts)
 
 
 def warning_counts(rows: List[Dict]) -> Dict[str, int]:
     """The numbers behind the page's summary bar, from the rows it is built on.
 
     `library` rows have a copy somewhere in the library, `identical` of those
-    where every copy matches in size AND pages, `downloads` rows have a twin
-    among the downloads. The page computes the same three from the same columns;
-    the journey test holds the two to each other.
+    where every copy is the same bytes and pages (the 'Existing Copy Identical'
+    column), `downloads` rows have a twin among the downloads. The page computes
+    the same three from the same columns; the journey test holds the two to each
+    other. A CSV from before that column existed has no verdicts, so nothing in
+    it is identical.
     """
     library = identical = downloads = 0
     for row in rows:
         names = [e for e in row.get("Existing Copies", "").split("|") if e.strip()]
         if names:
             library += 1
-            sizes = row.get("Existing Copy Sizes", "").split("|")
-            pages = row.get("Existing Copy Pages", "").split("|")
-
-            def same(text):
-                halves = [h.strip() for h in text.split("=>")]
-                return len(halves) == 2 and halves[0] == halves[1]
-            if all(same(sizes[k]) and same(pages[k]) if k < min(len(sizes), len(pages)) else False
-                   for k in range(len(names))):
+            verdicts = [v.strip() for v in row.get("Existing Copy Identical", "").split("|")]
+            if len(verdicts) == len(names) and all(v == "yes" for v in verdicts):
                 identical += 1
         if row.get("Also In Downloads", "").strip():
             downloads += 1
@@ -1678,10 +1719,15 @@ CSV_COLUMNS = [
     "Existing Copies",
     "Existing Copy Sizes",
     "Existing Copy Pages",
+    # 'yes | no | ...', one per entry above: the same exact bytes AND page count.
+    # Decided here so the page and the summary bar show one answer.
+    "Existing Copy Identical",
     # Other files in the SOURCE folder that are the same book. Entries are
     # 'other file => size, pages (this: size, pages)' joined by ' | ', or
     # 'same 8 books as <folder>' for two folders that pair up file for file.
     "Also In Downloads",
+    # Same shape as Existing Copy Identical, one verdict per Also In Downloads entry.
+    "Also In Downloads Identical",
 ]
 
 
@@ -1868,6 +1914,8 @@ def main():
         (row["Existing Copies"], row["Existing Copy Sizes"],
          row["Existing Copy Pages"]) = describe_existing_copies(
             [str(Path(folder_name) / f) for f in files_in_folder], dest_folder)
+        row["Existing Copy Identical"] = describe_existing_copies_identical(
+            [str(Path(folder_name) / f) for f in files_in_folder], dest_folder)
         rows.append(row)
 
         # Mark these files as processed. STEP 2 identifies a file by its path
@@ -1923,6 +1971,8 @@ def main():
             # that is already on disk, but the copy can be in any folder.
             (row["Existing Copies"], row["Existing Copy Sizes"],
              row["Existing Copy Pages"]) = describe_existing_copies(
+                [src_filename], row.get("Suggested Folder Name", ""))
+            row["Existing Copy Identical"] = describe_existing_copies_identical(
                 [src_filename], row.get("Suggested Folder Name", ""))
 
             # Track statistics

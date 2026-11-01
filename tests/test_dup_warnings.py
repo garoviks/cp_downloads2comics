@@ -583,5 +583,184 @@ class TestJourney(Temp):
         self.assertIn(CLOVEN_CBR, run.stdout.split('Planning moves')[0])
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# follow-up fixes (Opus review of 4419a9d)
+# ═══════════════════════════════════════════════════════════════════════════
+
+import duplicates  # noqa: E402  (paths puts the app directory on sys.path)
+
+COSMO_1 = 'Cosmoknights (Book 01) (2019) (digital) (Son of Ultron-Empire).cbz'
+COSMO_2 = 'Cosmoknights (Book 02) (2023) (digital) (Son of Ultron-Empire).cbz'
+
+
+class TestVolumeMarkerInsideBrackets(unittest.TestCase):
+    """'(Book 01)' is the book, not packaging, even though it sits in brackets."""
+
+    def one_book(self, a, b):
+        return duplicates.looks_like_one_book([a, b])
+
+    def test_cosmoknights_book_01_and_02_are_two_books(self):
+        self.assertFalse(self.one_book(COSMO_1, COSMO_2))
+
+    def test_a_bracketed_marker_equals_the_bare_one(self):
+        self.assertTrue(self.one_book('X (Book 01) (2019).cbz', 'X Book 01 (2020).cbz'))
+
+    def test_every_marker_form_counts(self):
+        for a, b in (('X (Vol 1) (2019).cbz', 'X (Vol 2) (2019).cbz'),
+                     ('X (Vol. 1) (2019).cbz', 'X (Vol. 2) (2019).cbz'),
+                     ('X (Volume 1) (2019).cbz', 'X (Volume 2) (2019).cbz'),
+                     ('X (v1) (2019).cbz', 'X (v2) (2019).cbz'),
+                     ('X (Part 1) (2019).cbz', 'X (Part 2) (2019).cbz')):
+            self.assertFalse(self.one_book(a, b), (a, b))
+
+    def test_the_same_bracketed_marker_with_other_padding_is_one_book(self):
+        self.assertTrue(self.one_book('X (Vol 1) (2019).cbz', 'X (Vol 01) (2020).cbz'))
+
+    def test_a_bracketed_part_equals_a_bare_part(self):
+        self.assertTrue(self.one_book('X (Part 2) (2019).cbz', 'X Part 2 (2020).cbz'))
+
+    def test_years_and_packer_tags_are_still_ignored(self):
+        self.assertTrue(self.one_book('Hound (2022) (digital) (Empire).cbz',
+                                      'Hound (2024) (digital) (Other).cbz'))
+        self.assertTrue(self.one_book(REV_6, REV_6.replace('2026', '2027')))
+
+    def test_trekker_13_and_14_stay_apart_and_the_pairs_still_pair(self):
+        self.assertFalse(self.one_book(TREK_13, TREK_14))
+        self.assertTrue(self.one_book(KIDZ_A, KIDZ_B))
+        self.assertTrue(self.one_book(CLOVEN_CBR, CLOVEN_CBZ))
+        self.assertTrue(self.one_book(f"{BONE_A}/Bonerest - A World's End 001 (2005).cbr",
+                                      f"{BONE_B}/Bonerest - A World's End 01 (2005).cbz"))
+
+
+class TestCosmoknightsAreNotTwinsOnTheScan(Temp):
+    def test_two_books_of_one_series_are_not_reported_as_twins(self):
+        self.down(COSMO_1)
+        self.down(COSMO_2)
+        rows = by_file(self.scan())
+        self.assertEqual(rows[COSMO_1]['Also In Downloads'], '')
+        self.assertEqual(rows[COSMO_2]['Also In Downloads'], '')
+
+
+# 2. 'identical' means the same bytes, decided in the generator ----------------
+
+def cbz_payload(path: Path, pages: int, payload: bytes) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, 'w') as z:
+        for i in range(pages):
+            z.writestr(f'{i:03d}.jpg', payload)
+    return path
+
+
+class TestIdenticalMeansTheSameBytes(Temp):
+
+    def test_same_megabyte_and_pages_but_different_bytes_is_not_identical(self):
+        self.lib('Saga/Saga 001 (2020).cbz', pages=3)
+        cbz_payload(self.src / 'Saga 001 (2020) (digital).cbz', 3, b'y' * 11)
+        row = by_file(self.scan())['Saga 001 (2020) (digital).cbz']
+        # Both read '0 MB' and '3p', which is what the old test called identical.
+        self.assertEqual(row['Existing Copy Sizes'], '0 MB => 0 MB')
+        self.assertEqual(row['Existing Copy Pages'], '3p => 3p')
+        self.assertEqual(row['Existing Copy Identical'], 'no')
+        self.assertEqual(g.warning_counts([row])['identical'], 0)
+
+    def test_the_same_bytes_and_pages_is_identical(self):
+        shutil.copy(self.lib('Saga/Saga 001 (2020).cbz'), self.src / 'Saga 001 (2020) (digital).cbz')
+        row = by_file(self.scan())['Saga 001 (2020) (digital).cbz']
+        self.assertEqual(row['Existing Copy Identical'], 'yes')
+        self.assertEqual(g.warning_counts([row])['identical'], 1)
+
+    def test_one_identical_copy_among_two_does_not_make_the_row_identical(self):
+        orig = self.lib('Saga/Saga 001 (2020).cbz')
+        shutil.copy(orig, self.src / 'Saga 001 (2020) (digital).cbz')
+        cbz_payload(self.dest / 'Other' / 'Saga 001 (2021).cbz', 3, b'z' * 12)
+        row = by_file(self.scan())['Saga 001 (2020) (digital).cbz']
+        self.assertEqual(row['Existing Copy Identical'], 'yes | no')
+        self.assertEqual(g.warning_counts([row])['identical'], 0)
+
+    def test_twins_get_the_same_verdict(self):
+        shutil.copy(self.down(KIDZ_A, pages=4), self.src / KIDZ_B)
+        row = by_file(self.scan())
+        self.assertEqual(row[KIDZ_A]['Also In Downloads Identical'], 'yes')
+        self.assertEqual(row[KIDZ_B]['Also In Downloads Identical'], 'yes')
+        # The bar's '(Y identical)' belongs to 'already in library' only.
+        self.assertEqual(g.warning_counts(list(row.values()))['identical'], 0)
+
+    def test_twins_with_different_bytes_are_not_identical(self):
+        self.down(KIDZ_A, pages=4)
+        cbz_payload(self.src / KIDZ_B, 4, b'q' * 13)
+        row = by_file(self.scan())
+        self.assertEqual(row[KIDZ_A]['Also In Downloads Identical'], 'no')
+
+    def test_a_folder_set_is_never_called_identical(self):
+        for i in range(1, 3):
+            self.down(f"{BONE_A}/Bonerest - A World's End 00{i} (2005).cbr")
+            self.down(f"{BONE_B}/Bonerest - A World's End 0{i} (2005).cbz")
+        rows = self.scan()
+        a = [r for r in rows if r['Left Folder'] == BONE_A][0]
+        self.assertTrue(a['Also In Downloads'].startswith('same 2 books'))
+        self.assertEqual(a['Also In Downloads Identical'], 'no')
+
+    def test_the_bar_matches_the_rows_in_python_and_in_the_page(self):
+        shutil.copy(self.lib('Saga/Saga 001 (2020).cbz'), self.src / 'Saga 001 (2020) (digital).cbz')
+        self.lib('Saga/Saga 002 (2020).cbz')
+        cbz_payload(self.src / 'Saga 002 (2020) (digital).cbz', 3, b'y' * 11)
+        shutil.copy(self.down(KIDZ_A, pages=4), self.src / KIDZ_B)
+        rows = self.scan()
+        counts = g.warning_counts(rows)
+        self.assertEqual(counts, {'library': 2, 'identical': 1, 'downloads': 2, 'total': 4})
+        if shutil.which('node'):
+            self.assertEqual(page_counts(rows)['c'], counts)
+
+    def test_an_old_csv_without_the_columns_shows_no_identical(self):
+        old = [{'Left Panel File': 'a.cbz', 'Existing Copies': 'a.cbz => X/a.cbz',
+                'Existing Copy Sizes': '5 MB => 5 MB', 'Existing Copy Pages': '3p => 3p',
+                'Also In Downloads': 'b.cbz => 5 MB, 3p (this: 5 MB, 3p)'}]
+        self.assertEqual(g.warning_counts(old)['identical'], 0)
+        if shutil.which('node'):
+            self.assertEqual(page_counts(old)['c']['identical'], 0)
+
+    def test_the_page_comment_no_longer_claims_size_to_the_mb(self):
+        self.assertNotIn('size shown AND the page count', HTML.read_text(encoding='utf-8'))
+
+
+# 3. a backup before every rules-file write -----------------------------------
+
+class TestRulesFileBackup(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='dupw-rules-'))
+        self.rules = self.tmp / '.comic_matching_rules.md'
+        self.bak = self.tmp / '.comic_matching_rules.md.bak'
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def writers(self):
+        return (lambda: srv.save_matching_rule(self.rules, 'Some Folder', 'accept'),
+                lambda: srv.save_publisher_home(self.rules, 'The Cloven', 'Fantagraphics (Europe)'))
+
+    def test_no_file_yet_means_no_backup(self):
+        for write in self.writers():
+            self.rules.unlink(missing_ok=True)
+            self.bak.unlink(missing_ok=True)
+            write()
+            self.assertTrue(self.rules.exists())
+            self.assertFalse(self.bak.exists())
+
+    def test_the_old_file_is_copied_before_it_is_rewritten(self):
+        for write in self.writers():
+            self.rules.write_text('# mine\n\n## Accept (0)\n\n## Refuse (0)\n\n## Publisher home (0)\n',
+                                  encoding='utf-8')
+            before = self.rules.read_text(encoding='utf-8')
+            write()
+            self.assertEqual(self.bak.read_text(encoding='utf-8'), before)
+            self.assertNotEqual(self.rules.read_text(encoding='utf-8'), before)
+
+    def test_a_second_write_replaces_the_previous_backup(self):
+        write_rule, write_home = self.writers()
+        write_rule()
+        after_first = self.rules.read_text(encoding='utf-8')
+        write_home()
+        self.assertEqual(self.bak.read_text(encoding='utf-8'), after_first)
+
+
 if __name__ == '__main__':
     unittest.main()
