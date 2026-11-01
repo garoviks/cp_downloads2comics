@@ -476,7 +476,8 @@ class TestPublisherHome(Temp):
 
     def test_the_button_is_on_the_page_and_the_keywords_are_the_matchers(self):
         html = HTML.read_text(encoding='utf-8')
-        self.assertIn('File this series in its publisher folder', html)
+        self.assertIn('/api/publisher-home-folder', html)       # the button names its folder (was a fixed label)
+        self.assertIn('>File ${esc(row.series)} in ${esc(folder)}<', html)
         m = re.search(r'PUBLISHER_KEYWORDS\s*=\s*\[([^\]]*)\]', html)
         self.assertTrue(m, 'the page needs the keyword list')
         self.assertEqual(set(re.findall(r'"([^"]+)"', m.group(1))), set(g.PUBLISHER_KEYWORDS))

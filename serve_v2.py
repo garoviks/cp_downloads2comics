@@ -101,6 +101,20 @@ def clean_rule_folder(folder: str) -> str:
     return folder
 
 
+def _one_blank_after(lines, i) -> None:
+    """Leave exactly one blank line after lines[i] when something follows it.
+
+    Replacing a section's only entry removes the entry but not the blank line
+    that followed it, and the insert that puts it back adds another, so a
+    repeated save widened the gap before the next heading by a line each time.
+    """
+    j = i + 1
+    while j < len(lines) and not lines[j].strip():
+        del lines[j]
+    if j < len(lines):
+        lines.insert(j, "")
+
+
 def _write_rules(rules_path: Path, lines) -> None:
     """Write the rules file, first copying what is there to '<name>.bak'.
 
@@ -110,6 +124,12 @@ def _write_rules(rules_path: Path, lines) -> None:
     """
     if rules_path.exists():
         shutil.copy2(rules_path, rules_path.with_name(rules_path.name + ".bak"))
+    # Exactly one newline at the end. Replacing the last section's only entry
+    # leaves the blank line that followed it AND adds the one the writer puts
+    # after a heading, so every save grew the file by a blank line.
+    lines = list(lines)
+    while lines and not lines[-1].strip():
+        lines.pop()
     rules_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -161,11 +181,28 @@ def save_matching_rule(rules_path: Path, folder: str, decision: str) -> str:
         lines.insert(at, "")
         at += 1
     lines.insert(at, f"- {folder}")
+    if not bullets:
+        _one_blank_after(lines, at)
 
     _refresh_rule_counts(lines)
 
     _write_rules(rules_path, lines)
     return f"{heading}: {folder}"
+
+
+def publisher_home_folder(dest_dir, filename):
+    """The library folder 'File this series in its publisher folder' would use, or None.
+
+    One answer for the question (handle_publisher_home_folder, so the page can
+    name the folder before the click) and for the save, so what the button says
+    is what gets written. Read-only: one directory listing.
+    """
+    import matching_analysis_generator as mag
+    try:
+        names = sorted(e.name for e in Path(dest_dir).iterdir() if e.is_dir())
+    except OSError:
+        return None
+    return mag.publisher_folder_for(filename or "", names)
 
 
 def run_rescan(renames, dest_dir) -> list:
@@ -240,6 +277,8 @@ def save_publisher_home(rules_path: Path, series: str, folder: str) -> str:
         lines.insert(at, "")
         at += 1
     lines.insert(at, f"- {series} => {folder}")
+    if not any(ln.startswith("- ") for ln in lines[start + 1:end]):
+        _one_blank_after(lines, at)
     _refresh_rule_counts(lines)
     _write_rules(rules_path, lines)
     return f"Publisher home: {series} => {folder}"
@@ -291,6 +330,10 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
 
         if path == "/api/save-rule":
             self.handle_save_rule()
+            return
+
+        if path == "/api/publisher-home-folder":
+            self.handle_publisher_home_folder()
             return
 
         if path == "/api/save-publisher-home":
@@ -544,6 +587,17 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             self.send_error(500, f"Error rescanning: {str(e)}")
 
+    def handle_publisher_home_folder(self):
+        """Which folder the Publisher home button would file this series in. Writes nothing."""
+        body = self.read_post_json()
+        _src, dest_dir = self.folder_pair(body)
+        payload = json.dumps({"folder": publisher_home_folder(dest_dir, body.get("file", ""))}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
     def handle_save_publisher_home(self):
         """Record 'this series lives in its publisher folder' for the CURRENT library.
 
@@ -554,9 +608,7 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
         body = self.read_post_json()
         _src, dest_dir = self.folder_pair(body)
         try:
-            import matching_analysis_generator as mag
-            names = sorted(e.name for e in Path(dest_dir).iterdir() if e.is_dir())
-            folder = mag.publisher_folder_for(body.get("file", ""), names)
+            folder = publisher_home_folder(dest_dir, body.get("file", ""))
             if not folder:
                 raise ValueError("no publisher folder found for that file")
             message = save_publisher_home(

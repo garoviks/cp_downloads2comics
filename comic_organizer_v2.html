@@ -1247,8 +1247,10 @@ async function scanFolders() {
     document.getElementById('consolidate-btn').disabled = false;
 
     addLog('✅ Scan complete');
+    return true;
   } catch (e) {
     addLog(`❌ Error: ${e.message}`, 'error');
+    return false;
   }
 }
 
@@ -2008,7 +2010,10 @@ function openDetails(id) {
   g.innerHTML = fields.map(([l, v]) =>
     `<div class="detail-label">${l}</div><div class="detail-value">${v}</div>`
   ).join('');
-  document.getElementById('details-actions').innerHTML = publisherHomeButtonHtml(row);
+  const actions = document.getElementById('details-actions');
+  actions.innerHTML = '';
+  actions.dataset.row = String(row.id);
+  fillPublisherHomeButton(row);
   openModal('modal-details');
 }
 
@@ -2024,17 +2029,36 @@ function publisherKeywordIn(filename) {
   return PUBLISHER_KEYWORDS.find(k => new RegExp('(^|[^A-Za-z0-9])' + k + '([^A-Za-z0-9]|$)', 'i').test(filename));
 }
 
-function publisherHomeButtonHtml(row) {
+// The button names its folder before the click: the page asks the server which
+// folder the save would use (read-only) and shows the button only if there is one.
+function publisherHomeButtonHtml(row, folder) {
   const file = basename(row.leftFile);
-  if (!publisherKeywordIn(file)) return '';
+  if (!folder || !publisherKeywordIn(file)) return '';
   return `<button class="btn btn-sm btn-outline" onclick="savePublisherHome(${row.id})"
-      title="Writes '- ${esc(row.series)} => <publisher folder>' to .comic_matching_rules.md">File this series in its publisher folder</button>`;
+      title="Writes '- ${esc(row.series)} => ${esc(folder)}' to .comic_matching_rules.md">File ${esc(row.series)} in ${esc(folder)}</button>`;
+}
+
+async function fillPublisherHomeButton(row) {
+  if (!publisherKeywordIn(basename(row.leftFile))) return;
+  const { destDir } = currentFolders();
+  let folder = null;
+  try {
+    const res = await fetch('/api/publisher-home-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: basename(row.leftFile), dest_dir: destDir }),
+    });
+    if (res.ok) folder = (await res.json()).folder || null;
+  } catch (e) { /* no answer, no button */ }
+  const box = document.getElementById('details-actions');
+  if (box.dataset.row === String(row.id)) box.innerHTML = publisherHomeButtonHtml(row, folder);
 }
 
 async function savePublisherHome(rowId) {
   const row = data.find(r => r.id === rowId);
   if (!row) return;
   const { destDir } = currentFolders();
+  let saved;
   try {
     const res = await fetch('/api/save-publisher-home', {
       method: 'POST',
@@ -2042,13 +2066,19 @@ async function savePublisherHome(rowId) {
       body: JSON.stringify({ series: row.series, file: basename(row.leftFile), dest_dir: destDir }),
     });
     if (!res.ok) throw new Error(`Server error: ${res.status}`);
-    const saved = await res.json();
-    closeModal('modal-details');
-    toast(`Saved: ${saved.saved}. Scan again to apply it.`);
-    addLog(`📌 ${saved.saved} — run Scan Folders to apply it`);
+    saved = await res.json();
   } catch (e) {
     toast(`❌ Could not save: ${e.message}`);
+    return;
   }
+  closeModal('modal-details');
+  addLog(`📌 ${saved.saved} — rescanning`);
+  // The same rescan as Scan Folders, which also reloads the rows: the Cloven rows
+  // change in place instead of waiting for a manual scan and an F5.
+  const ok = await scanFolders();
+  toast(ok
+    ? `Saved: ${saved.saved}. Rescanned.`
+    : `Saved: ${saved.saved}. The rescan failed - press Scan Folders to apply it.`);
 }
 
 function buildOverrides() {
