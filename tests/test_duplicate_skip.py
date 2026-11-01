@@ -283,7 +283,7 @@ class TestHowManyPages(unittest.TestCase):
 
 
 class TestWhatTheGeneratorReports(unittest.TestCase):
-    """Only the destination folder is searched, and the demotion rules still apply."""
+    """The destination folder is searched first, then the library; the demotion rules still apply."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix='dup-gen-'))
@@ -297,11 +297,13 @@ class TestWhatTheGeneratorReports(unittest.TestCase):
         self.saved = (gen.SRC_DIR, gen.DEST_DIR)
         gen.SRC_DIR, gen.DEST_DIR = self.src, self.dest
         gen._DEST_FOLDER_INDEX.clear()
+        gen._LIBRARY_INDEX.clear()
         gen._PAGE_COUNTS.clear()
 
     def tearDown(self):
         gen.SRC_DIR, gen.DEST_DIR = self.saved
         gen._DEST_FOLDER_INDEX.clear()
+        gen._LIBRARY_INDEX.clear()
         gen._PAGE_COUNTS.clear()
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -313,8 +315,11 @@ class TestWhatTheGeneratorReports(unittest.TestCase):
         got = gen.find_existing_copies(
             self._incoming('Harley Quinn v02 - Power Outage (2016) (digital-Empire).cbz'),
             self.folder)
-        self.assertEqual([p.name for p in got],
-                         ['Harley Quinn v02 - Power Outage (2015).cbz'])
+        # The fixture also keeps the same book in 'Elsewhere/'; the library-wide
+        # search reports it after the destination folder's own copy.
+        self.assertEqual([p.relative_to(self.dest).as_posix() for p in got],
+                         ['Harley Quinn/Harley Quinn v02 - Power Outage (2015).cbz',
+                          'Elsewhere/Harley Quinn v02 - Power Outage (2015).cbz'])
 
     def test_a_different_volume_two_is_not(self):
         """Six Harley Quinn v02s parse alike; the subtitle is what tells them apart."""
@@ -322,12 +327,12 @@ class TestWhatTheGeneratorReports(unittest.TestCase):
             self._incoming('Harley Quinn v02 - Keepsake (2022) (digital).cbz'),
             self.folder), [])
 
-    def test_a_copy_elsewhere_in_the_library_is_not_the_folder_this_is_headed_for(self):
-        """Scope is the destination folder — the whole-library view is its own report."""
+    def test_a_copy_elsewhere_in_the_library_is_reported_after_the_folders_own(self):
+        """Scope is the whole library, destination folder first (dup-warnings A)."""
         names, _, _ = gen.describe_existing_copies(
             [self._incoming('Harley Quinn v02 - Power Outage (2016).cbz')], '/Elsewhere/')
-        self.assertEqual(names.count('=>'), 1)
-        self.assertIn('Elsewhere', names)
+        self.assertEqual(names.count('=>'), 2)
+        self.assertLess(names.index('Elsewhere/'), names.index('Harley Quinn/'))
 
     def test_the_three_columns_are_parallel_and_name_both_halves(self):
         """The UI zips these back together by position, so the shape is a contract."""
@@ -337,23 +342,25 @@ class TestWhatTheGeneratorReports(unittest.TestCase):
         self.assertEqual(
             names,
             'Harley Quinn v02 - Power Outage (2016).cbz'
-            ' => Harley Quinn/Harley Quinn v02 - Power Outage (2015).cbz')
+            ' => Harley Quinn/Harley Quinn v02 - Power Outage (2015).cbz'
+            ' | Harley Quinn v02 - Power Outage (2016).cbz'
+            ' => Elsewhere/Harley Quinn v02 - Power Outage (2015).cbz')
         self.assertEqual(sizes.count('=>'), names.count('=>'))
         self.assertEqual(pages.count('=>'), names.count('=>'))
-        self.assertEqual(sizes, '0 MB => 0 MB')
-        self.assertEqual(pages, '3p => 5p')
+        self.assertEqual(sizes, '0 MB => 0 MB | 0 MB => 0 MB')
+        self.assertEqual(pages, '3p => 5p | 3p => 5p')
 
-    def test_a_row_with_no_destination_folder_asks_nothing(self):
-        """A blank folder name is not the library root.
+    def test_a_row_with_no_destination_folder_searches_the_library_not_the_root_as_a_folder(self):
+        """A blank folder name is COPY_TO_BASE: no folder of its own to look in.
 
-        'Suggested Folder Name' is empty on rows that file nothing anywhere.
-        Joined onto the library path it resolves to the library itself, which
-        would flag every copy anywhere in it — the whole-library view, asked for
-        on a row that has no destination to compare against.
+        It used to ask nothing, because the root as a "destination folder" would
+        have flagged every copy anywhere. Now every copy anywhere is the point,
+        so the library index answers, once per copy — not once more for the root
+        walked as if it were a folder.
         """
-        self.assertEqual(gen.describe_existing_copies(
-            [self._incoming('Harley Quinn v02 - Power Outage (2016).cbz')], ''),
-            ('', '', ''))
+        names, _, _ = gen.describe_existing_copies(
+            [self._incoming('Harley Quinn v02 - Power Outage (2016).cbz')], '')
+        self.assertEqual(names.count('=>'), 2)
 
 
 def _run(args, tmp):

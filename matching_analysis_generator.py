@@ -12,6 +12,7 @@ Usage:
 """
 
 import csv
+import os
 import re
 import sys
 import argparse
@@ -103,6 +104,17 @@ MATCHING_RULES_FILE = ".comic_matching_rules.md"
 # runtime (O17), so a plain cache would serve library A's lists to library B.
 _CONTAINERS_CACHE: Dict[str, Dict[str, str]] = {}
 _RULES_CACHE: Dict[str, Dict[str, str]] = {}
+_PUBLISHER_HOME_CACHE: Dict[str, Dict[str, Tuple[str, str]]] = {}
+# Bad lines in the Publisher home list already mentioned in the scan log, so the
+# several files of one series do not each repeat the complaint.
+_PUBLISHER_HOME_REPORTED: set = set()
+
+# Words in a filename that say which publisher folder a book belongs in. One
+# list for two readers: find_publisher_match() files by it, and the page offers
+# 'File this series in its publisher folder' only when a filename carries one.
+# Two lists is how the button would end up offered for a keyword the matcher
+# does not know.
+PUBLISHER_KEYWORDS = ("Cinebook", "Fantagraphics", "Humanoids", "Soleil", "SAF")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # FILENAME PARSING
@@ -585,9 +597,7 @@ def find_publisher_match(filename: str, dest_map: Dict) -> Optional[Tuple[str, D
     # Extract publisher names from known folders (first word)
     # "Cinebook (Europe)" → "Cinebook"
     # "SAF Comics (Europe Collection) (2019)" → "SAF"
-    publisher_keywords = {
-        "Cinebook", "Fantagraphics", "Humanoids", "Soleil", "SAF"
-    }
+    publisher_keywords = PUBLISHER_KEYWORDS
 
     # This used to duplicate a module-level PUBLISHER_FOLDERS constant that was
     # declared and never read, and which had already drifted from this set (it
@@ -703,6 +713,78 @@ def load_matching_rules() -> Dict[str, str]:
     if root not in _RULES_CACHE:
         _RULES_CACHE[root] = _read_folder_list(DEST_DIR / MATCHING_RULES_FILE)
     return _RULES_CACHE[root]
+
+
+def load_publisher_home() -> Dict[str, Tuple[str, str]]:
+    """Read the '## Publisher home' section of `.comic_matching_rules.md`.
+
+    Lines look like '- The Cloven => Fantagraphics (Europe)'. Returns
+    {normalised series: (series as written, publisher folder as written)}.
+
+    This is a per-series list on purpose, not a global publisher-first rule.
+    'The Cloven' lives in 'Fantagraphics (Europe)' although a '/The Cloven/'
+    folder exists, but 37 other series folders (Lucky Luke, XIII, Blake &
+    Mortimer ...) hold publisher-tagged files and belong in their own folder;
+    commit 2a13007 put series-first on purpose for Blake & Mortimer. Only the
+    series you name here is moved.
+
+    A missing file or section yields {} and changes nothing. The target is kept
+    in its written case because it is later compared with real folder names.
+    """
+    root = str(DEST_DIR)
+    if root not in _PUBLISHER_HOME_CACHE:
+        listed: Dict[str, Tuple[str, str]] = {}
+        path = DEST_DIR / MATCHING_RULES_FILE
+        if path.exists():
+            in_section = False
+            for line in path.read_text(encoding='utf-8').splitlines():
+                line = line.rstrip()
+                if line.startswith('## '):
+                    in_section = line[3:].split('(')[0].strip().lower() == 'publisher home'
+                elif in_section and line.startswith('- ') and '=>' in line:
+                    series, _, folder = line[2:].partition('=>')
+                    series, folder = series.strip(), folder.strip()
+                    if series and folder:
+                        listed[normalize_name(series)] = (series, folder)
+        _PUBLISHER_HOME_CACHE[root] = listed
+    return _PUBLISHER_HOME_CACHE[root]
+
+
+def publisher_folder_for(filename: str, folder_names: List[str]) -> Optional[str]:
+    """The top-level folder find_publisher_match() would pick for this filename.
+
+    Takes folder names rather than a dest_map so the server can answer from one
+    directory listing instead of a whole library scan.
+    """
+    for keyword in PUBLISHER_KEYWORDS:
+        if contains_words(filename, keyword):
+            for name in folder_names:
+                if contains_words(name, keyword):
+                    return name
+    return None
+
+
+def find_publisher_home_match(src_series: str, dest_map: Dict) -> Optional[Tuple[str, Dict]]:
+    """The publisher folder this series is filed in by name, if it is listed.
+
+    Compared on normalize_name() so 'the cloven' and 'The Cloven' are one series.
+    A target that is not a folder in the library is ignored — filing into a
+    folder that does not exist would quietly create one — and said once in the
+    scan log so the typo can be found.
+    """
+    entry = load_publisher_home().get(normalize_name(src_series))
+    if not entry:
+        return None
+    series, folder = entry
+    want = folder.strip().lower()
+    for dest_series, dest_data in dest_map.items():
+        if any(f.strip().lower() == want for f in dest_data.get("folders") or []):
+            return (dest_series, dest_data)
+    note = (str(DEST_DIR), series, folder)
+    if note not in _PUBLISHER_HOME_REPORTED:
+        _PUBLISHER_HOME_REPORTED.add(note)
+        print(f"   ⚠️  Publisher home: no folder '{folder}' for '{series}' — line ignored")
+    return None
 
 
 def container_kind(folder_name: str) -> Optional[str]:
@@ -823,6 +905,7 @@ def find_matches(src_filename: str, src_series: str,
     """
     Find matches using priority rules:
     1. Specific series folders (Billy & Buddy, Gomer Goof, etc.)
+    1b. Series listed under '## Publisher home' in the rules file
     2. Publisher folders (Cinebook, Fantagraphics, etc.)
     3. Series name exact match (case-insensitive) — folder or loose files
     4. No match (None)
@@ -834,6 +917,9 @@ def find_matches(src_filename: str, src_series: str,
 
       SPECIFIC_SERIES   a hardcoded folder rule fired
       PUBLISHER         requirement O6 routing
+      PUBLISHER_HOME    the series is listed under '## Publisher home' in the
+                        rules file, so it goes to that publisher folder even
+                        though a folder of its own exists
       EXACT             matched on the file's OWN series — the safe case
       EXACT_SHORTENED   matched on a shortened form of the title. Usually right
                         ('The Wicked + The Divine - Christmas Annual' belongs
@@ -864,6 +950,13 @@ def find_matches(src_filename: str, src_series: str,
     specific = find_specific_series_match(src_filename, dest_map)
     if specific:
         return (specific[0], specific[1], specific[2], None)
+
+    # Rule 1b: a series the user filed in its publisher folder by name. Ahead of
+    # the series-folder rule below because the whole point is to beat it: the
+    # series folder exists, and the publisher folder is where the book lives.
+    home = find_publisher_home_match(src_series, dest_map)
+    if home:
+        return (home[0], home[1], "PUBLISHER_HOME", None)
 
     # Rule 2: Try exact series match (before publisher — a series folder beats a
     # publisher folder). Every candidate the parser produced is tried, MOST
@@ -1046,6 +1139,8 @@ def generate_consolidation_strategy(
             consolidation_strategy += " (specific series folder match)"
         elif confidence == "PUBLISHER":
             consolidation_strategy += " (publisher folder match)"
+        elif confidence == "PUBLISHER_HOME":
+            consolidation_strategy += " (series filed in its publisher folder)"
 
         total_matches = num_files_in_folders + num_loose_files + num_folders
         has_files = "YES" if (num_files_in_folders + num_loose_files) > 0 else "NO"
@@ -1157,8 +1252,61 @@ def index_destination_folder(folder: Path) -> Dict[tuple, List[Path]]:
     return _DEST_FOLDER_INDEX[cache_key]
 
 
-def find_existing_copies(src_rel: str, dest_folder: Path) -> List[Path]:
-    """Files in dest_folder that look like the book `src_rel` already is.
+_LIBRARY_INDEX: Dict[str, Dict[tuple, List[Path]]] = {}
+
+
+def index_library() -> Dict[tuple, List[Path]]:
+    """Comic files across the library, keyed like index_destination_folder().
+
+    Covers the library root, every top-level folder, and one level of subfolders
+    below each ('2000AD - Collections/PSI Division/'). Not deeper: the copies the
+    user has been bitten by sit at those three levels, and a full recursive parse
+    of ~47,000 names is the part of a scan that would show.
+
+    Built once per library root and reused for every row of the scan. The key is
+    duplicates.book_key(), so 'the same book' is still decided by
+    duplicates.looks_like_one_book() alone; this only finds the candidates.
+    """
+    cache_key = str(DEST_DIR)
+    if cache_key not in _LIBRARY_INDEX:
+        index = defaultdict(list)
+
+        def level(folder):
+            files, dirs = [], []
+            try:
+                with os.scandir(folder) as it:
+                    for e in sorted(it, key=lambda e: e.name):
+                        if e.is_dir():
+                            dirs.append(Path(e.path))
+                        elif e.is_file() and Path(e.name).suffix.lower() in duplicates.COMIC_EXTS:
+                            files.append(Path(e.path))
+            except OSError:
+                pass
+            return files, dirs
+
+        def add(files):
+            for p in files:
+                series = normalize_name(release.parse_release(p.name).series)
+                index[duplicates.book_key(p.name, series)].append(p)
+
+        files, tops = level(DEST_DIR)
+        add(files)
+        for top in tops:
+            files, subs = level(top)
+            add(files)
+            for sub in subs:
+                add(level(sub)[0])
+        _LIBRARY_INDEX[cache_key] = dict(index)
+    return _LIBRARY_INDEX[cache_key]
+
+
+def find_existing_copies(src_rel: str, dest_folder: Optional[Path]) -> List[Path]:
+    """Files in the library that look like the book `src_rel` already is.
+
+    The destination folder is searched first and all the way down, then the rest
+    of the library (index_library()). Looking only at the folder a download is
+    headed for missed 'The Cloven - Book Three' sitting in 'Fantagraphics
+    (Europe)/' while the row was going to '/The Cloven/'.
 
     `src_rel` is relative to SRC_DIR, because the folders above a download can
     carry a volume number its filename leaves out just as the library's do, and
@@ -1166,9 +1314,15 @@ def find_existing_copies(src_rel: str, dest_folder: Path) -> List[Path]:
     """
     name = Path(src_rel).name
     key = duplicates.book_key(name, normalize_name(release.parse_release(name).series))
-    library_root = dest_folder.parent
-    return [c for c in index_destination_folder(dest_folder).get(key, [])
-            if duplicates.looks_like_one_book([src_rel, c.relative_to(library_root)])]
+    seen, found = set(), []
+    here = sorted(index_destination_folder(dest_folder).get(key, [])) if dest_folder else []
+    for c in here + index_library().get(key, []):
+        if c in seen:
+            continue
+        seen.add(c)
+        if duplicates.looks_like_one_book([src_rel, c.relative_to(DEST_DIR)]):
+            found.append(c)
+    return found
 
 
 def describe_existing_copies(src_rels, dest_folder_name: str) -> Tuple[str, str, str]:
@@ -1177,12 +1331,16 @@ def describe_existing_copies(src_rels, dest_folder_name: str) -> Tuple[str, str,
     One entry per collision rather than one per incoming file, so a folder op
     carrying thirty files and a single loose file produce the same shape and the
     UI needs one reader for all three. Empty strings when nothing collides, which
-    is the overwhelming majority of rows.
+    is the overwhelming majority of rows. Copies in the destination folder come
+    first, then copies elsewhere in the library, each with its library-relative
+    path.
     """
+    # A blank folder is a row that files into the library root (COPY_TO_BASE).
+    # It has no folder of its own to look in, but the copy could be anywhere, so
+    # the library index still answers. None, not DEST_DIR: passing the root as
+    # the "destination folder" would make index_destination_folder() walk it all.
     folder = dest_folder_name.strip('/').strip()
-    if not folder:
-        return '', '', ''
-    dest_folder = DEST_DIR / folder
+    dest_folder = DEST_DIR / folder if folder else None
     names, sizes, pages = [], [], []
     for src_rel in src_rels:
         src = SRC_DIR / src_rel
@@ -1191,6 +1349,103 @@ def describe_existing_copies(src_rels, dest_folder_name: str) -> Tuple[str, str,
             sizes.append(f'{human_size(src)} => {human_size(copy)}')
             pages.append(f'{human_pages(src)} => {human_pages(copy)}')
     return ' | '.join(names), ' | '.join(sizes), ' | '.join(pages)
+
+
+def _download_files(row: Dict) -> List[str]:
+    """Source-relative paths of the comic files one CSV row moves."""
+    if row.get("Action Type") in ("CONSOLIDATE_FOLDER", "CREATE_FOLDER_FROM_FOLDER"):
+        folder = row.get("Left Folder", "")
+        return [str(Path(folder) / n.strip())
+                for n in row.get("Files Details", "").split("|") if n.strip()]
+    left = row.get("Left Panel File", "")
+    return [left] if left else []
+
+
+def annotate_twins_in_downloads(rows: List[Dict]) -> None:
+    """Fill 'Also In Downloads': other files on the left that are the same book.
+
+    Every download is compared with every other of the same duplicates.book_key()
+    by duplicates.looks_like_one_book(), the one judge of 'same book' — so Revolution 9
+    006 and 009, or Trekker Book 13 and 14, which parse alike but are not, stay apart.
+
+    A file row lists the others as 'other => size, pages (this: size, pages)'. A
+    folder row names which of its files is meant: 'mine ~ other => ...'. Two
+    folders whose files pair up one-to-one are one finding, not eight: both rows
+    say 'same 8 books as <other folder>' and the per-file lines between them are
+    dropped. Only a warning — nothing is unticked.
+    """
+    entries = []                      # (row index, relative path)
+    for i, row in enumerate(rows):
+        entries += [(i, rel) for rel in _download_files(row)]
+    groups = defaultdict(list)
+    for e in entries:
+        name = Path(e[1]).name
+        groups[duplicates.book_key(
+            name, normalize_name(release.parse_release(name).series))].append(e)
+
+    links = defaultdict(list)         # row index -> [(mine, other entry)]
+    pairs = defaultdict(set)          # (row i, row j) -> {(mine, theirs)}
+    for members in groups.values():
+        for x in range(len(members)):
+            for y in range(x + 1, len(members)):
+                (i, a), (j, b) = members[x], members[y]
+                if duplicates.looks_like_one_book([a, b]):
+                    links[i].append((a, (j, b)))
+                    links[j].append((b, (i, a)))
+                    pairs[tuple(sorted((i, j)))].add((a, b) if i < j else (b, a))
+
+    is_folder = lambda r: r.get("Action Type") in ("CONSOLIDATE_FOLDER", "CREATE_FOLDER_FROM_FOLDER")
+    same_set = {}                     # row index -> [other row index]
+    for (i, j), matched in pairs.items():
+        if i == j or not (is_folder(rows[i]) and is_folder(rows[j])):
+            continue
+        fa, fb = _download_files(rows[i]), _download_files(rows[j])
+        if (len(fa) == len(fb) == len(matched)
+                and len({a for a, _ in matched}) == len(fa)
+                and len({b for _, b in matched}) == len(fb)):
+            same_set.setdefault(i, []).append(j)
+            same_set.setdefault(j, []).append(i)
+
+    def measure(rel):
+        return f"{human_size(SRC_DIR / rel)}, {human_pages(SRC_DIR / rel)}"
+
+    for i, row in enumerate(rows):
+        parts = [f"same {len(_download_files(rows[i]))} books as {rows[j].get('Left Folder', '')}"
+                 for j in same_set.get(i, [])]
+        for mine, (j, other) in links.get(i, []):
+            if j in same_set.get(i, []):
+                continue
+            lead = f"{Path(mine).name} ~ " if is_folder(row) else ""
+            parts.append(f"{lead}{other} => {measure(other)} (this: {measure(mine)})")
+        row["Also In Downloads"] = " | ".join(parts)
+
+
+def warning_counts(rows: List[Dict]) -> Dict[str, int]:
+    """The numbers behind the page's summary bar, from the rows it is built on.
+
+    `library` rows have a copy somewhere in the library, `identical` of those
+    where every copy matches in size AND pages, `downloads` rows have a twin
+    among the downloads. The page computes the same three from the same columns;
+    the journey test holds the two to each other.
+    """
+    library = identical = downloads = 0
+    for row in rows:
+        names = [e for e in row.get("Existing Copies", "").split("|") if e.strip()]
+        if names:
+            library += 1
+            sizes = row.get("Existing Copy Sizes", "").split("|")
+            pages = row.get("Existing Copy Pages", "").split("|")
+
+            def same(text):
+                halves = [h.strip() for h in text.split("=>")]
+                return len(halves) == 2 and halves[0] == halves[1]
+            if all(same(sizes[k]) and same(pages[k]) if k < min(len(sizes), len(pages)) else False
+                   for k in range(len(names))):
+                identical += 1
+        if row.get("Also In Downloads", "").strip():
+            downloads += 1
+    return {"library": library, "identical": identical, "downloads": downloads,
+            "total": library + downloads}
 
 
 def human_size(path: Path) -> str:
@@ -1423,7 +1678,55 @@ CSV_COLUMNS = [
     "Existing Copies",
     "Existing Copy Sizes",
     "Existing Copy Pages",
+    # Other files in the SOURCE folder that are the same book. Entries are
+    # 'other file => size, pages (this: size, pages)' joined by ' | ', or
+    # 'same 8 books as <folder>' for two folders that pair up file for file.
+    "Also In Downloads",
 ]
+
+
+def rescan_renamed(renames: List[Dict], dest_map: Dict) -> List[Dict]:
+    """Re-match every row the user has renamed, TOGETHER.
+
+    Rescanning one file at a time gave 11 Trekker files 11 COPY_TO_BASE rows,
+    because each, alone, was a lone unmatched file. Group_series counts the rows
+    that now carry the same new series: when the library has no such series and
+    two or more rows do, all of them go into one new "/<series>/" folder, named
+    as the first of them was typed. A series the library has behaves as before
+    (CONSOLIDATE into its folder), and a series carried by one row stays a
+    COPY_TO_BASE.
+
+    `renames` is [{'left_file', 'new_series'}]; the result is one dict per
+    rename, in order, with the columns the page needs plus 'left_file'.
+    """
+    found = [find_matches(r["left_file"], r["new_series"].strip(), dest_map) for r in renames]
+    groups = defaultdict(list)
+    for i, f in enumerate(found):
+        if f[0] is None:
+            groups[normalize_name(renames[i]["new_series"])].append(i)
+
+    out = []
+    for i, (r, (matched, data, confidence, blocked)) in enumerate(zip(renames, found)):
+        typed = r["new_series"].strip()
+        group = groups.get(normalize_name(typed), []) if matched is None else []
+        folder_series = renames[group[0]]["new_series"].strip() if len(group) > 1 else typed
+        row = generate_consolidation_strategy(
+            r["left_file"], folder_series, matched, data, confidence,
+            len(group) - 1 if len(group) > 1 else 0)
+        out.append({
+            "left_file": r["left_file"],
+            "Series Name": typed,
+            "Action Type": row["Action Type"],
+            "Suggested Folder Name": row["Suggested Folder Name"],
+            "Right Panel Matches (Count)": row["Right Panel Matches (Count)"],
+            "Has Existing Folder": row["Has Existing Folder"],
+            "Has Existing Files": row["Has Existing Files"],
+            "Consolidation Strategy": row["Consolidation Strategy"],
+            "Move Source": row["Move Source"],
+            "Confidence": confidence,
+            "Blocked Destination": blocked or "",
+        })
+    return out
 
 
 def main():
@@ -1560,12 +1863,11 @@ def main():
             "Right Loose Files": " | ".join(right_loose_for_row),
             "Proposed Files Details": " | ".join(proposed_files_details_parts),
         }
-        # Only an existing folder can already hold a copy; the other branch is
-        # creating the folder, so there is nothing in it yet.
-        if matched_folder:
-            (row["Existing Copies"], row["Existing Copy Sizes"],
-             row["Existing Copy Pages"]) = describe_existing_copies(
-                [str(Path(folder_name) / f) for f in files_in_folder], dest_folder)
+        # A new folder holds nothing yet, but the same books may sit in another
+        # folder of the library, so every folder row asks.
+        (row["Existing Copies"], row["Existing Copy Sizes"],
+         row["Existing Copy Pages"]) = describe_existing_copies(
+            [str(Path(folder_name) / f) for f in files_in_folder], dest_folder)
         rows.append(row)
 
         # Mark these files as processed. STEP 2 identifies a file by its path
@@ -1602,7 +1904,7 @@ def main():
 
             # Compute proposed filename (rename to match canonical series in target folder)
             proposed_filename = ""
-            if row.get("Action Type") == "CONSOLIDATE" and confidence != "PUBLISHER":
+            if row.get("Action Type") == "CONSOLIDATE" and confidence not in ("PUBLISHER", "PUBLISHER_HOME"):
                 dest_folder_name = row.get("Suggested Folder Name", "").strip("/").strip()
                 if dest_folder_name:
                     canonical = get_canonical_series_for_folder(DEST_DIR / dest_folder_name)
@@ -1617,12 +1919,11 @@ def main():
             loose = dest_map.get(matched_series, {}).get("loose_files", []) if matched_series else []
             row["Right Loose Files"] = " | ".join(loose)
 
-            # CONSOLIDATE is the only file-level action that targets a folder
-            # already on disk. The others create one, so nothing can be in it.
-            if row.get("Action Type") == "CONSOLIDATE":
-                (row["Existing Copies"], row["Existing Copy Sizes"],
-                 row["Existing Copy Pages"]) = describe_existing_copies(
-                    [src_filename], row.get("Suggested Folder Name", ""))
+            # Every file-level action asks. Only CONSOLIDATE targets a folder
+            # that is already on disk, but the copy can be in any folder.
+            (row["Existing Copies"], row["Existing Copy Sizes"],
+             row["Existing Copy Pages"]) = describe_existing_copies(
+                [src_filename], row.get("Suggested Folder Name", ""))
 
             # Track statistics
             action_type = row["Action Type"]
@@ -1633,7 +1934,7 @@ def main():
             elif action_type == "COPY_TO_BASE":
                 copy_to_base_count += 1
 
-            if confidence in SERIES_KEY_MATCHES + ("SPECIFIC_SERIES", "PUBLISHER"):
+            if confidence in SERIES_KEY_MATCHES + ("SPECIFIC_SERIES", "PUBLISHER", "PUBLISHER_HOME"):
                 exact_matches += 1
 
             # Add folder info if file is in a subfolder. Read from the path
@@ -1650,7 +1951,11 @@ def main():
         if i % 10 == 0:
             print(f"   [{i}] Analyzed {i} series...")
 
+    annotate_twins_in_downloads(rows)
+    counts = warning_counts(rows)
     print(f"\n✅ Analysis complete!\n")
+    print(f"⚠️  Warnings: {counts['library']} already in library "
+          f"({counts['identical']} identical), {counts['downloads']} also in Downloads\n")
 
     # Write CSV
     print("📝 Writing CSV file...")

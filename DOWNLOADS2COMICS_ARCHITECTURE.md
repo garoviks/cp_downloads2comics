@@ -180,8 +180,15 @@ Response: text/event-stream
 Request:  { "left_file": "filename.cbr", "new_series": "New Series Name" }
 Response: { "Series Name": "...", "Action Type": "...", "Suggested Folder Name": "...", ... }
 ```
-- Subprocess calls `find_matches()` + `generate_consolidation_strategy()` directly
-- Subprocess prints `RESCAN_JSON:<json>` which server parses and returns
+- `renamed: [{left_file, new_series}]` may carry every other row renamed this session; all are matched together by `rescan_renamed()` (a new series carried by 2+ rows gets ONE new folder). The reply keeps the single-row fields and adds `results`, one entry per row.
+- `run_rescan()` starts a subprocess (renames sent as JSON on stdin) that prints `RESCAN_JSON:<json>`, which the server parses and returns
+
+**`POST /api/save-publisher-home`**
+```json
+Request:  { "series": "The Cloven", "file": "The Cloven - Book Three (2025) (Fantagraphics)....cbz", "dest_dir": "/path" }
+Response: { "saved": "Publisher home: The Cloven => Fantagraphics (Europe)", "folder": "Fantagraphics (Europe)" }
+```
+- Writes `- series => folder` under `## Publisher home` in `.comic_matching_rules.md` (same in-place rewrite as Accept/Refuse)
 
 **Streaming Implementation:**
 ```python

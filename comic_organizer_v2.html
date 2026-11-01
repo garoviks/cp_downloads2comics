@@ -299,6 +299,29 @@
   /* 0 pages means the archive was read and holds no images — not a comic. */
   .dup-note .not-a-comic { color: #f4a4a4; font-weight: 600; }
   .dup-note.decided { color: #7d9a7d; }
+  .dup-note .identical { color: #f4a4a4; font-weight: 700; }
+
+  /* Summary of every warning, above the tables. Clicking it turns the chip on. */
+  .warn-bar {
+    background: #3a2f12;
+    border-bottom: 1px solid #d99a2b;
+    color: #f0c674;
+    padding: 9px 24px;
+    font-size: 0.88rem;
+    cursor: pointer;
+  }
+  .warn-bar:hover { background: #4a3b16; }
+  .warn-bar[hidden] { display: none; }
+  .chip {
+    background: #16213e;
+    border: 1px solid #0f346080;
+    color: #e0e0e0;
+    padding: 5px 12px;
+    border-radius: 14px;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .chip.on { background: #d99a2b; border-color: #d99a2b; color: #1a1a2e; font-weight: 700; }
 
   .strategy-text {
     color: #b0b0c0;
@@ -590,6 +613,10 @@
   <button class="btn btn-outline" onclick="reloadCSV()" id="reload-btn">♻️ Reload CSV</button>
 </div>
 
+<div class="warn-bar" id="warn-bar" role="button" tabindex="0" hidden
+     title="Show only the rows with a warning"
+     onclick="showDuplicatesOnly()" onkeydown="if (event.key === 'Enter') showDuplicatesOnly()"></div>
+
 <!-- ══════════════════════════════════════════════════════════════════════════
      MAIN CONTENT
 ══════════════════════════════════════════════════════════════════════════════ -->
@@ -628,6 +655,7 @@
       <span class="section-title">Source Folders</span>
       <span class="badge badge-blue" id="badge-folders">0</span>
       <span style="font-size:0.75rem;color:#b0b0c0;margin-left:4px;">Subfolders from source — click ▶ to expand files</span>
+      <button class="chip dup-chip" onclick="toggleDuplicates()" title="Show only rows already in the library or twinned in Downloads">Duplicates</button>
     </div>
 
     <div class="table-wrap">
@@ -672,6 +700,7 @@
         <option value="LEFT">LEFT only</option>
         <option value="LEFT + RIGHT_FILES">LEFT + RIGHT_FILES</option>
       </select>
+      <button class="chip dup-chip" onclick="toggleDuplicates()" title="Show only rows already in the library or twinned in Downloads">Duplicates</button>
       <button class="btn btn-sm btn-outline" onclick="selectAll('consolidate')">Select All</button>
       <button class="btn btn-sm btn-outline" onclick="deselectAll('consolidate')">Deselect All</button>
     </div>
@@ -708,6 +737,7 @@
 
     <div class="filter-bar">
       <input class="search-input" type="text" id="search-newfolder" placeholder="Search series or file…" oninput="filterTable('newfolder')">
+      <button class="chip dup-chip" onclick="toggleDuplicates()" title="Show only rows already in the library or twinned in Downloads">Duplicates</button>
       <button class="btn btn-sm btn-outline" onclick="selectAll('newfolder')">Select All</button>
       <button class="btn btn-sm btn-outline" onclick="deselectAll('newfolder')">Deselect All</button>
     </div>
@@ -751,6 +781,7 @@
     <button class="modal-close" onclick="closeModal('modal-details')">&times;</button>
     <div class="modal-title" id="details-title">File Details</div>
     <div class="detail-grid" id="details-grid"></div>
+    <div id="details-actions" style="margin-top:12px;"></div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('modal-details')">Close</button>
     </div>
@@ -1325,13 +1356,17 @@ async function consolidate() {
 
 // ── Table Functions ──
 function getRows(section) {
+  let rows;
   if (section === 'folders') {
-    return data.filter(r => r.action === 'CONSOLIDATE_FOLDER' || r.action === 'CREATE_FOLDER_FROM_FOLDER');
+    rows = data.filter(r => r.action === 'CONSOLIDATE_FOLDER' || r.action === 'CREATE_FOLDER_FROM_FOLDER');
+  } else if (section === 'consolidate') {
+    rows = data.filter(r => r.action === 'CONSOLIDATE');
+  } else {
+    rows = data.filter(r => r.action === 'CREATE_FOLDER_WITH_FILES' || r.action === 'COPY_TO_BASE');
   }
-  if (section === 'consolidate') {
-    return data.filter(r => r.action === 'CONSOLIDATE');
-  }
-  return data.filter(r => r.action === 'CREATE_FOLDER_WITH_FILES' || r.action === 'COPY_TO_BASE');
+  // The Duplicates chip. Applied here so every list, count and Select All
+  // agrees about which rows are showing.
+  return dupOnly ? rows.filter(r => { const w = warningOf(r); return w.library || w.downloads; }) : rows;
 }
 
 function toggleFolderExpand(rowId) {
@@ -1364,7 +1399,7 @@ function renderFolders(rows) {
       <td><div class="file-name" title="${row['Left Folder'] || ''}">${row['Left Folder'] || row.leftFile}/</div></td>
       <td>${row['File Count'] || '?'} files${rightNote}</td>
       <td>${row.series}</td>
-      <td><div class="folder-name">${effectiveFolder(row)}/</div>${duplicateNoteHtml(row)}${duplicateButtonsHtml(row)}</td>
+      <td><div class="folder-name">${effectiveFolder(row)}/</div>${duplicateNoteHtml(row)}${twinNoteHtml(row)}${duplicateButtonsHtml(row)}</td>
       <td>${actionLabel}</td>
       <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
       <td><div class="actions-cell">
@@ -1635,15 +1670,102 @@ function duplicateNoteHtml(row) {
     ? (row.dupDecision === 'skip'
         ? '✓ staying in the source folder'
         : '✓ filing it anyway, as a second copy')
-    : '📀 already in the library:';
+    : '📀 already in library:';
   // A folder row moves many files and only some of them collided, so it has to
   // say which. A file row is the file already named two cells to the left.
   const many = row.action === 'CONSOLIDATE_FOLDER' || row.action === 'CREATE_FOLDER_FROM_FOLDER';
   const lines = copies.map(c => `<div title="${esc(c.incoming + ' → ' + c.existing)}"
       >${many ? esc(c.incoming) + ' → ' : ''}<span class="have">${esc(c.existing)}</span>
        <span class="size">(there ${measure(c.exSize, c.exPages)}
-        · yours ${measure(c.inSize, c.inPages)})</span></div>`).join('');
+        · yours ${measure(c.inSize, c.inPages)})</span>${isIdentical(c) ? ' <span class="identical">identical</span>' : ''}</div>`).join('');
   return `<div class="dup-note${row.dupDecision ? ' decided' : ''}">${decided}${lines}</div>`;
+}
+
+// ─── Warnings: copies in the library and twins in Downloads ───────────────────
+//
+// Both kinds are only ever warnings. Nothing is unticked, skipped or deleted
+// because of them; the user picks which copy to keep. 'identical' means the
+// size shown AND the page count are both the same - sizes are shown to the MB,
+// so it says "these two look the same", not that the bytes were compared.
+let dupOnly = false;
+
+function isIdentical(c) {
+  return c.inSize === c.exSize && c.inPages === c.exPages;
+}
+
+// 'Also In Downloads' entries (see matching_analysis_generator.py):
+//   other => size, pages (this: size, pages)          a file row
+//   mine ~ other => size, pages (this: size, pages)   a folder row, naming its file
+//   same 8 books as <folder>                          two folders that pair up
+function alsoInDownloads(row) {
+  return String(row['Also In Downloads'] || '').split(' | ').map(s => s.trim()).filter(Boolean)
+    .map(entry => {
+      if (/^same \d+ books as /.test(entry)) return { set: entry };
+      const m = entry.match(/^(?:(.*?) ~ )?(.*?) => ([^,]*), (.*?) \(this: ([^,]*), (.*)\)$/);
+      if (!m) return { set: entry };
+      return { mine: m[1] || '', other: m[2], exSize: m[3], exPages: m[4], inSize: m[5], inPages: m[6] };
+    });
+}
+
+function warningOf(row) {
+  const copies = existingCopies(row);
+  return {
+    library: copies.length > 0,
+    identical: copies.length > 0 && copies.every(isIdentical),
+    downloads: alsoInDownloads(row).length > 0,
+  };
+}
+
+function twinNoteHtml(row) {
+  const twins = alsoInDownloads(row);
+  if (!twins.length) return '';
+  const lines = twins.map(t => {
+    if (t.set) return `<div>${esc(t.set)}</div>`;
+    const lead = t.mine ? esc(t.mine) + ' ↔ ' : '';
+    return `<div title="${esc(t.other)}">${lead}<span class="have">${esc(t.other)}</span>
+      <span class="size">(there ${measure(t.exSize, t.exPages)}
+       · yours ${measure(t.inSize, t.inPages)})</span>${isIdentical(t) ? ' <span class="identical">identical</span>' : ''}</div>`;
+  }).join('');
+  return `<div class="dup-note">📎 also in Downloads:${lines}</div>`;
+}
+
+// Pure, so a test can hold it to warning_counts() in the generator.
+function warningCounts(rows) {
+  let library = 0, identical = 0, downloads = 0;
+  rows.forEach(r => {
+    const w = warningOf(r);
+    if (w.library) library++;
+    if (w.identical) identical++;
+    if (w.downloads) downloads++;
+  });
+  return { library, identical, downloads, total: library + downloads };
+}
+
+function warningBarText(c) {
+  return c.total === 0 ? '' :
+    `You have ${c.total} warning${c.total === 1 ? '' : 's'}: ${c.library} already in library ` +
+    `(${c.identical} identical), ${c.downloads} also in Downloads`;
+}
+
+function updateWarnBar() {
+  const bar = document.getElementById('warn-bar');
+  const counts = warningCounts(data);
+  bar.hidden = counts.total === 0;
+  bar.textContent = warningBarText(counts);
+}
+
+function syncChips() {
+  document.querySelectorAll('.dup-chip').forEach(c => c.classList.toggle('on', dupOnly));
+}
+
+function toggleDuplicates() {
+  dupOnly = !dupOnly;
+  renderAll();
+}
+
+function showDuplicatesOnly() {
+  dupOnly = true;
+  renderAll();
 }
 
 // Undecided is the safe state: the mover refuses to execute while anything here
@@ -1717,7 +1839,7 @@ function renderConsolidate(rows) {
       <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
       <td><div class="file-name" title="${row.leftFile}">${basename(row.leftFile)}</div>${renameNote}</td>
       <td>${row.series}</td>
-      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div>${reviewNoteHtml(review)}${decidedNoteHtml(row)}${ruleButtonsHtml(row)}${duplicateNoteHtml(row)}${duplicateButtonsHtml(row)}</td>
+      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div>${reviewNoteHtml(review)}${decidedNoteHtml(row)}${ruleButtonsHtml(row)}${duplicateNoteHtml(row)}${twinNoteHtml(row)}${duplicateButtonsHtml(row)}</td>
       <td class="match-count">${row.matches}</td>
       <td>${hasFolderPill}</td>
       <td>${hasFilesPill}</td>
@@ -1746,7 +1868,7 @@ function renderNewfolder(rows) {
       <td><input type="checkbox" class="row-chk" data-id="${row.id}" onchange="updateSelected()"></td>
       <td><div class="file-name" title="${row.leftFile}">${basename(row.leftFile)}</div>${renameNote}</td>
       <td>${row.series}</td>
-      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div>${reviewNoteHtml(review)}${decidedNoteHtml(row)}${ruleButtonsHtml(row)}${duplicateNoteHtml(row)}${duplicateButtonsHtml(row)}</td>
+      <td><div class="folder-name" title="${effectiveFolder(row)}">${effectiveFolder(row)}</div>${reviewNoteHtml(review)}${decidedNoteHtml(row)}${ruleButtonsHtml(row)}${duplicateNoteHtml(row)}${twinNoteHtml(row)}${duplicateButtonsHtml(row)}</td>
       <td><div class="strategy-text" title="${row.strategy}">${row.strategy}</div></td>
       <td><div class="actions-cell">
         <button class="btn btn-sm btn-outline" onclick="openDetails(${row.id})">Details</button>
@@ -1780,6 +1902,8 @@ function renderAll() {
   review.textContent = needing;
   review.style.color = needing ? '#d99a2b' : '';
 
+  updateWarnBar();
+  syncChips();
   updateSelected();
 }
 
@@ -1877,7 +2001,47 @@ function openDetails(id) {
   g.innerHTML = fields.map(([l, v]) =>
     `<div class="detail-label">${l}</div><div class="detail-value">${v}</div>`
   ).join('');
+  document.getElementById('details-actions').innerHTML = publisherHomeButtonHtml(row);
   openModal('modal-details');
+}
+
+// ─── Series that live in their publisher folder ──────────────────────────────
+//
+// The same words the matcher files by (matching_analysis_generator.py
+// PUBLISHER_KEYWORDS; a test holds the two lists equal). The button is offered
+// only when the filename carries one, because the server picks the folder from
+// that word.
+const PUBLISHER_KEYWORDS = ["Cinebook", "Fantagraphics", "Humanoids", "Soleil", "SAF"];
+
+function publisherKeywordIn(filename) {
+  return PUBLISHER_KEYWORDS.find(k => new RegExp('(^|[^A-Za-z0-9])' + k + '([^A-Za-z0-9]|$)', 'i').test(filename));
+}
+
+function publisherHomeButtonHtml(row) {
+  const file = basename(row.leftFile);
+  if (!publisherKeywordIn(file)) return '';
+  return `<button class="btn btn-sm btn-outline" onclick="savePublisherHome(${row.id})"
+      title="Writes '- ${esc(row.series)} => <publisher folder>' to .comic_matching_rules.md">File this series in its publisher folder</button>`;
+}
+
+async function savePublisherHome(rowId) {
+  const row = data.find(r => r.id === rowId);
+  if (!row) return;
+  const { destDir } = currentFolders();
+  try {
+    const res = await fetch('/api/save-publisher-home', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ series: row.series, file: basename(row.leftFile), dest_dir: destDir }),
+    });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    const saved = await res.json();
+    closeModal('modal-details');
+    toast(`Saved: ${saved.saved}. Scan again to apply it.`);
+    addLog(`📌 ${saved.saved} — run Scan Folders to apply it`);
+  } catch (e) {
+    toast(`❌ Could not save: ${e.message}`);
+  }
 }
 
 function buildOverrides() {
@@ -1977,55 +2141,69 @@ async function saveSeriesName() {
 
   closeModal('modal-series');
 
-  if (isBulk) {
-    // Option B: apply series override to all selected rows, no rescan
-    targetIds.forEach(tid => {
-      const r = data.find(row => row.id === tid);
-      if (r) {
-        r.seriesOverride = newSeries;
-        r.series = newSeries;
-        // Clear dest override since series changed
-        r.destOverride = null;
-      }
-    });
+  // Every selected row takes the new name at once. The matching is then decided
+  // for ALL renamed rows together on the server: whether a new series needs a
+  // folder depends on how many rows now carry it (11 Trekker files used to get
+  // 11 COPY_TO_BASE rows, one rescan each).
+  const targets = targetIds.map(tid => data.find(row => row.id === tid)).filter(Boolean);
+  const before = targets.map(r => ({ r, series: r.series, seriesOverride: r.seriesOverride, destOverride: r.destOverride }));
+  targets.forEach(r => {
+    r.seriesOverride = newSeries;
+    r.series = newSeries;
+    r.destOverride = null;   // series changed
+  });
+
+  addLog(`✏️  Rescanning ${targets.length} row(s) with series name: "${newSeries}"...`);
+  showConsole();
+
+  try {
+    const results = await rescanRenamed(editedRow, newSeries);
     renderAll();
-    toast(`Series name "${newSeries}" applied to ${targetIds.length} rows. Run Scan or Dry Run to refresh matching.`);
-  } else {
-    // Single row: rescan as before
-    const row = editedRow;
-    addLog(`✏️  Rescanning "${row.leftFile}" with series name: "${newSeries}"...`);
-    showConsole();
-
-    try {
-      const response = await fetch('/api/rescan-series', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ left_file: row.leftFile, new_series: newSeries }),
-      });
-
-      if (!response.ok) throw new Error(`Server error: ${response.status}`);
-
-      const updated = await response.json();
-
-      row.seriesOverride = newSeries;
-      row.series = newSeries;
-      row.action = updated["Action Type"];
-      row.folder = updated["Suggested Folder Name"];
-      row.strategy = updated["Consolidation Strategy"];
-      row.matches = parseInt(updated["Right Panel Matches (Count)"]) || 0;
-      row.hasFolder = updated["Has Existing Folder"];
-      row.hasFiles = updated["Has Existing Files"];
-      row.moveSource = updated["Move Source"];
-      row.destOverride = null;
-
-      renderAll();
-      addLog(`✅ Rescanned: series="${newSeries}", action=${updated["Action Type"]}, dest=${updated["Suggested Folder Name"]}`);
-      toast(`Series updated. New action: ${updated["Action Type"]}`);
-
-    } catch (e) {
-      addLog(`❌ Rescan failed: ${e.message}`, 'error');
-    }
+    const mine = results.find(u => u.left_file === editedRow.leftFile) || results[0];
+    addLog(`✅ Rescanned: series="${newSeries}", action=${mine["Action Type"]}, dest=${mine["Suggested Folder Name"]}`);
+    toast(isBulk ? `Series name "${newSeries}" applied to ${targets.length} rows.`
+                 : `Series updated. New action: ${mine["Action Type"]}`);
+  } catch (e) {
+    // Nothing was matched, so nothing is kept: a name with no rescan behind it
+    // would claim a destination nobody computed.
+    before.forEach(b => { b.r.series = b.series; b.r.seriesOverride = b.seriesOverride; b.r.destOverride = b.destOverride; });
+    renderAll();
+    addLog(`❌ Rescan failed: ${e.message}`, 'error');
   }
+}
+
+// Send the row just edited plus EVERY row renamed this session, and apply the
+// answer to each of them. A row whose destination the user then set by hand
+// keeps it; the user's explicit choice outranks a recomputed one.
+async function rescanRenamed(editedRow, newSeries) {
+  const renamed = data
+    .filter(r => r.seriesOverride !== undefined && r.action !== 'CONSOLIDATE_FOLDER'
+                 && r.action !== 'CREATE_FOLDER_FROM_FOLDER')
+    .map(r => ({ left_file: r.leftFile, new_series: r.seriesOverride }));
+  const { destDir } = currentFolders();
+  const response = await fetch('/api/rescan-series', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ left_file: editedRow.leftFile, new_series: newSeries, renamed, dest_dir: destDir }),
+  });
+  if (!response.ok) throw new Error(`Server error: ${response.status}`);
+  const answer = await response.json();
+  const results = answer.results || [answer];
+  results.forEach(u => {
+    const r = u.left_file === editedRow.leftFile
+      ? editedRow
+      : data.find(x => x.leftFile === u.left_file && x.seriesOverride !== undefined);
+    if (!r || (r !== editedRow && r.destOverride !== null)) return;
+    r.action = u["Action Type"];
+    r.folder = u["Suggested Folder Name"];
+    r.strategy = u["Consolidation Strategy"];
+    r.matches = parseInt(u["Right Panel Matches (Count)"]) || 0;
+    r.hasFolder = u["Has Existing Folder"];
+    r.hasFiles = u["Has Existing Files"];
+    r.moveSource = u["Move Source"];
+    r.destOverride = null;
+  });
+  return results;
 }
 
 async function reloadCSV() {

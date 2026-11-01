@@ -67,6 +67,11 @@ Shortened titles may be filed into these folders.
 
 Shortened titles may not be filed into these folders. A folder's own series
 still files here normally.
+
+## Publisher home (0)
+
+Series that live in their publisher folder rather than a folder of their own,
+written '- Series => Publisher folder'.
 """
 
 
@@ -144,15 +149,87 @@ def save_matching_rule(rules_path: Path, folder: str, decision: str) -> str:
         at += 1
     lines.insert(at, f"- {folder}")
 
-    # Refresh every '## Heading (n)' so the counts stay honest.
+    _refresh_rule_counts(lines)
+
+    rules_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return f"{heading}: {folder}"
+
+
+def run_rescan(renames, dest_dir) -> list:
+    """Match renamed rows against the library in a fresh process.
+
+    A subprocess for the reason the single-row version used one: a fresh import
+    reads the library as it is now. The renames travel as JSON on stdin so
+    nothing from a request is ever spliced into code.
+    """
+    script = (
+        "import sys, json\n"
+        f"sys.path.insert(0, {str(Path(__file__).resolve().parent)!r})\n"
+        "import matching_analysis_generator as mag\n"
+        "req = json.load(sys.stdin)\n"
+        "mag.DEST_DIR = mag.Path(req['dest'])\n"
+        "dest_map = mag.scan_destination_directory()\n"
+        "print('RESCAN_JSON:' + json.dumps(mag.rescan_renamed(req['renames'], dest_map)))\n"
+    )
+    proc = subprocess.run(["python3", "-c", script], capture_output=True, text=True, timeout=120,
+                          input=json.dumps({"renames": renames, "dest": str(dest_dir)}))
+    for line in proc.stdout.split("\n"):
+        if line.startswith("RESCAN_JSON:"):
+            return json.loads(line[len("RESCAN_JSON:"):])
+    raise Exception(f"No result from rescan subprocess. stderr: {proc.stderr}")
+
+
+def _refresh_rule_counts(lines):
+    """Rewrite every '## Heading (n)' so the counts stay honest."""
     section_starts = [i for i, ln in enumerate(lines) if ln.startswith("## ")]
     for n, i in enumerate(section_starts):
         stop = section_starts[n + 1] if n + 1 < len(section_starts) else len(lines)
         count = sum(1 for j in range(i + 1, stop) if lines[j].startswith("- "))
         lines[i] = f"## {lines[i][3:].split('(')[0].strip()} ({count})"
 
+
+def save_publisher_home(rules_path: Path, series: str, folder: str) -> str:
+    """Record 'this series lives in its publisher folder' as '- series => folder'.
+
+    Same file, same in-place rewrite as save_matching_rule(), in its own
+    '## Publisher home' section, which is added if a hand-edited file lost it.
+    An earlier line for the same series is replaced, not stacked. Both values
+    are written into a file whose every line is meaningful, so control
+    characters, a '=>' inside the series and a path for the folder are refused.
+    """
+    series = (series or "").strip()
+    if not series:
+        raise ValueError("no series given")
+    if any(ord(c) < 32 for c in series) or "=>" in series:
+        raise ValueError("a series name cannot contain control characters or '=>'")
+    folder = clean_rule_folder(folder)
+
+    text = rules_path.read_text(encoding="utf-8") if rules_path.exists() else RULES_TEMPLATE
+    lines = text.splitlines()
+    key = series.lower()
+    lines = [ln for ln in lines
+             if not (ln.startswith("- ") and "=>" in ln
+                     and ln[2:].split("=>")[0].strip().lower() == key)]
+
+    starts = [i for i, ln in enumerate(lines) if ln.startswith("## ")]
+    try:
+        start = next(i for i in starts
+                     if lines[i][3:].split("(")[0].strip().lower() == "publisher home")
+    except StopIteration:
+        lines += ["", "## Publisher home (0)", ""]
+        start = len(lines) - 2
+        starts.append(start)
+    end = next((i for i in starts if i > start), len(lines))
+    at = end
+    while at > start + 1 and not lines[at - 1].strip():
+        at -= 1
+    if at == start + 1:
+        lines.insert(at, "")
+        at += 1
+    lines.insert(at, f"- {series} => {folder}")
+    _refresh_rule_counts(lines)
     rules_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return f"{heading}: {folder}"
+    return f"Publisher home: {series} => {folder}"
 
 
 class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
@@ -201,6 +278,10 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
 
         if path == "/api/save-rule":
             self.handle_save_rule()
+            return
+
+        if path == "/api/save-publisher-home":
+            self.handle_save_publisher_home()
             return
 
         self.send_error(404)
@@ -415,8 +496,14 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
                     os.unlink(tmp)
 
     def handle_rescan_series(self):
-        """Rescan matching logic for a single file with an overridden series name.
-        Uses a subprocess to avoid blocking and to get a fresh import."""
+        """Rescan every row the user has renamed, together (see rescan_renamed).
+
+        The body carries the row just edited (`left_file`, `new_series`) and,
+        in `renamed`, every other row renamed this session. They are matched in
+        one go because whether a new series needs its own folder depends on how
+        many rows now carry it. The reply keeps the single-row fields the page
+        always read, and adds `results` with one entry per row.
+        """
         body = self.read_post_json()
         left_file = body.get("left_file", "").strip()
         new_series = body.get("new_series", "").strip()
@@ -425,62 +512,54 @@ class ComicOrganizerV2Handler(SimpleHTTPRequestHandler):
             self.send_error(400, "Missing left_file or new_series")
             return
 
+        renames = [{"left_file": left_file, "new_series": new_series}]
+        for other in body.get("renamed") or []:
+            f, n = str(other.get("left_file", "")).strip(), str(other.get("new_series", "")).strip()
+            if f and n and f != left_file and all(f != r["left_file"] for r in renames):
+                renames.append({"left_file": f, "new_series": n})
+
         try:
-            # Run a small Python script that does the rescan and outputs JSON
-            script = f"""
-import sys, json
-sys.path.insert(0, '/home/nesha/scripts/cp_downloads2comics/')
-import matching_analysis_generator as mag
-
-dest_map = mag.scan_destination_directory()
-matched, match_data, confidence, blocked = mag.find_matches(
-    {json.dumps(left_file)}, {json.dumps(new_series)}, dest_map
-)
-row = mag.generate_consolidation_strategy(
-    {json.dumps(left_file)}, {json.dumps(new_series)}, matched, match_data, confidence
-)
-result = {{
-    "Series Name": {json.dumps(new_series)},
-    "Action Type": row["Action Type"],
-    "Suggested Folder Name": row["Suggested Folder Name"],
-    "Right Panel Matches (Count)": row["Right Panel Matches (Count)"],
-    "Has Existing Folder": row["Has Existing Folder"],
-    "Has Existing Files": row["Has Existing Files"],
-    "Consolidation Strategy": row["Consolidation Strategy"],
-    "Move Source": row["Move Source"],
-    "Confidence": confidence,
-    "Blocked Destination": blocked or "",
-}}
-print("RESCAN_JSON:" + json.dumps(result))
-"""
-            process = subprocess.Popen(
-                ["python3", "-c", script],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            stdout, stderr = process.communicate(timeout=120)
-
-            # Extract JSON from output (after RESCAN_JSON: marker)
-            result_json = None
-            for line in stdout.split("\n"):
-                if line.startswith("RESCAN_JSON:"):
-                    result_json = line[len("RESCAN_JSON:"):]
-                    break
-
-            if result_json is None:
-                raise Exception(f"No result from rescan subprocess. stderr: {stderr}")
-
-            json_data = result_json.encode("utf-8")
+            _src, dest_dir = self.folder_pair(body)
+            results = run_rescan(renames, dest_dir)
+            json_data = json.dumps({**results[0], "results": results}).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(json_data)))
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json_data)
-
         except Exception as e:
             self.send_error(500, f"Error rescanning: {str(e)}")
+
+    def handle_save_publisher_home(self):
+        """Record 'this series lives in its publisher folder' for the CURRENT library.
+
+        The server picks the folder, not the page: it is the first top-level
+        folder whose name carries the publisher keyword found in the filename,
+        which is the folder find_publisher_match() would pick.
+        """
+        body = self.read_post_json()
+        _src, dest_dir = self.folder_pair(body)
+        try:
+            import matching_analysis_generator as mag
+            names = sorted(e.name for e in Path(dest_dir).iterdir() if e.is_dir())
+            folder = mag.publisher_folder_for(body.get("file", ""), names)
+            if not folder:
+                raise ValueError("no publisher folder found for that file")
+            message = save_publisher_home(
+                Path(dest_dir) / MATCHING_RULES_FILE, body.get("series", ""), folder)
+        except ValueError as e:
+            self.send_error(400, str(e))
+            return
+        except Exception as e:
+            self.send_error(500, f"Could not save: {e}")
+            return
+        payload = json.dumps({"saved": message, "folder": folder}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
     def handle_save_rule(self):
         """Record an Accept/Refuse decision against the CURRENT library root.

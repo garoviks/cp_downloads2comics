@@ -76,7 +76,11 @@ def book_key(filename: str, series_key: str) -> tuple:
     series vocabulary they use everywhere else.
     """
     r = release.parse_release(Path(filename).name)
-    return (series_key, r.volume, r.issue, r.issue_range, r.kind)
+    # '001' and '01' are one issue. Packers pad differently, and the two
+    # 'Bonerest - A World's End' folders in Downloads differed in nothing else,
+    # so the unpadded form is what two copies are grouped on.
+    issue = re.sub(r'^0+(?=\d)', '', r.issue) if r.issue else r.issue
+    return (series_key, r.volume, issue, r.issue_range, r.kind)
 
 
 def title_signature(filename: str) -> frozenset:

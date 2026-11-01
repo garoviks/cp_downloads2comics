@@ -45,14 +45,15 @@ Downloads2Comics is a web-based tool for consolidating downloaded comic files fr
 
 ### FR3: Matching
 
-Four rules applied in priority order per source file/series:
+Rules applied in priority order per source file/series (the order the code really uses; an earlier version of this table put publisher before series):
 
 | Priority | Rule | Method | Description |
 |----------|------|--------|-------------|
 | 1 | Specific Series | Substring in filename | Hardcoded list: Billy & Buddy, Gomer Goof |
-| 2 | Publisher | Keyword in filename | Cinebook, Fantagraphics, Humanoids, Soleil, SAF → publisher folder |
-| 3 | Exact | Case-insensitive name match | Only matches if dest has a named folder OR loose files (NOT files_in_folders alone) |
-| 4 | Fuzzy | Substring containment | Series > 5 chars; dest must have actual folder; prefers folder over file-only |
+| 1b | Publisher home | Series key in `.comic_matching_rules.md` `## Publisher home` | Lines `- The Cloven => Fantagraphics (Europe)`: that series goes to that publisher folder even though a folder of its own exists. Per-series on purpose, not a global publisher-first rule: dozens of series folders (Lucky Luke, XIII, Blake & Mortimer ...) hold publisher-tagged files. A missing file or section changes nothing; an unknown target folder is ignored and said once in the scan log. |
+| 2 | Series folder | Exact series key (case-insensitive, then normalised), most specific candidate first | Only matches if dest has a named folder OR loose files (NOT files_in_folders alone); container folders refuse shortened titles (O16) |
+| 3 | Publisher | Keyword in filename | Cinebook, Fantagraphics, Humanoids, Soleil, SAF → publisher folder (`PUBLISHER_KEYWORDS`) |
+| 4 | None | | New folder or base directory |
 
 **Subfolder matching:** EXACT only (rules 1–4 do not apply to subfolder-level matching).
 
@@ -95,6 +96,8 @@ Written to `{source_dir}/matching_analysis_consolidated.csv` after each scan.
 | `Move Source` | LEFT or LEFT + RIGHT_FILES(N) |
 | `Files Details` | Pipe-separated filenames (for subfolders) |
 | `Right Loose Files` | Pipe-separated right-side filenames to co-move |
+| `Existing Copies` / `Existing Copy Sizes` / `Existing Copy Pages` | Copies of the same book ANYWHERE in the library (root, top-level folders, one level of subfolders; the destination folder is searched in full and listed first). Warning only; the mover asks per file before executing. |
+| `Also In Downloads` | Other source files that are the same book (`other => size, pages (this: size, pages)`), or `same N books as <folder>` for two folders that pair up file for file. Warning only. |
 
 ### FR7: Dry Run
 
@@ -114,8 +117,7 @@ Written to `{source_dir}/matching_analysis_consolidated.csv` after each scan.
 ### FR9: Overrides
 
 **Series name override:**
-- Single row: triggers live re-match via `/api/rescan-series` endpoint
-- Multiple rows (bulk): applies label only; user must re-run Scan to refresh matching
+- Single or multiple rows: re-match via `/api/rescan-series`, which is sent every row renamed this session. When the new series has no library match and two or more rows carry it, all become `CREATE_FOLDER_WITH_FILES` into one `/<series>/`
 
 **Destination folder override:**
 - Single or bulk: applied immediately to the data array
